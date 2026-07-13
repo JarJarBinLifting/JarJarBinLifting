@@ -9,6 +9,7 @@ import { Agenda } from "./components/shell/Agenda";
 import { Timer } from "./components/shell/Timer";
 import { SettingsScreen } from "./components/settings/SettingsScreen";
 import { TutorModal } from "./components/tutor/TutorModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { Chapter, Ue } from "./lib/types";
 
 function MainApp() {
@@ -42,15 +43,42 @@ function MainApp() {
       </div>
       <Nav view={view} onNavigate={navigate} />
 
-      {studyingChapter && chapterUe && (
-        <TutorModal
-          chapterId={studyingChapter.id}
-          ueCode={chapterUe.code}
-          chapterName={studyingChapter.name}
-          onClose={() => setStudyingChapter(null)}
-          onCompleted={() => refreshAll()}
-        />
-      )}
+      <ErrorBoundary
+        onReset={() => {
+          setStudyingChapter(null);
+          refreshAll();
+        }}
+        fallback={(error, reset) => (
+          <div className="tutor-modal" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="tutor-card" style={{ maxWidth: 420, textAlign: "center" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+              <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-err)", marginBottom: 8 }}>
+                La session a rencontré une erreur
+              </h3>
+              <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+                Ta progression jusqu'à la dernière étape terminée est enregistrée — rien n'est perdu. Ferme la session pour
+                revenir au planning ; la prochaine fois, tu pourras reprendre où tu t'es arrêté.
+              </p>
+              <p style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)", marginBottom: 16, wordBreak: "break-word" }}>
+                {error.message}
+              </p>
+              <button className="tutor-bp" style={{ width: "100%" }} onClick={reset}>
+                Fermer et revenir au planning
+              </button>
+            </div>
+          </div>
+        )}
+      >
+        {studyingChapter && chapterUe && (
+          <TutorModal
+            chapterId={studyingChapter.id}
+            ueCode={chapterUe.code}
+            chapterName={studyingChapter.name}
+            onClose={() => setStudyingChapter(null)}
+            onCompleted={() => refreshAll()}
+          />
+        )}
+      </ErrorBoundary>
     </div>
   );
 }

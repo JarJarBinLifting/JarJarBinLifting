@@ -3,11 +3,14 @@ use rusqlite::Connection;
 /// Ordered, forward-only migrations. Add new entries at the end — never edit
 /// an already-shipped entry's SQL, since `_migrations` only records that a
 /// version number ran, not a checksum of its contents.
-const MIGRATIONS: &[(i64, &str, &str)] = &[(
-    1,
-    "init schema",
-    include_str!("../../migrations/0001_init.sql"),
-)];
+const MIGRATIONS: &[(i64, &str, &str)] = &[
+    (1, "init schema", include_str!("../../migrations/0001_init.sql")),
+    (
+        2,
+        "tutor session difficulty",
+        include_str!("../../migrations/0002_tutor_session_difficulty.sql"),
+    ),
+];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 

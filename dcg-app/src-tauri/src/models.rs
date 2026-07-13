@@ -60,6 +60,7 @@ pub struct TutorSessionRow {
     pub exercice_json: Option<String>,
     pub bilan_json: Option<String>,
     pub adhd_mode_used: bool,
+    pub difficulty: String,
     pub started_at: String,
     pub completed_at: Option<String>,
 }

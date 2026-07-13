@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import type { ConceptConfidence, Exercice, ExoCorrection, FlashcardRow, Qcm, QcmQuestion, Story } from "../../lib/types";
+import type { ConceptConfidence, Exercice, ExoCorrection, FlashcardRow, Qcm, QcmQuestion, Story, TutorSessionRow } from "../../lib/types";
 import { avgConfidence, overconfidentTitles } from "./analysis";
 import { genJson } from "./llm";
 import { DIFFS, bumpDiff, prompts, type Diff } from "./prompts";
@@ -16,7 +16,7 @@ import { BilanPhase, type ScheduleResult } from "./phases/BilanPhase";
 import { Transition, type TransitionSpec } from "./phases/Transition";
 import { TutorError, TutorSpin } from "./shared";
 
-type Phase = "checking" | "input" | "loading" | "decouverte" | "transition" | "flashcards" | "qcm" | "socratique" | "exercice" | "bilan";
+type Phase = "checking" | "resume-prompt" | "input" | "loading" | "decouverte" | "transition" | "flashcards" | "qcm" | "socratique" | "exercice" | "bilan";
 
 const STAGE_ICONS: { id: Phase; icon: string; label: string }[] = [
   { id: "decouverte", icon: "🧠", label: "Découverte" },
@@ -57,6 +57,7 @@ export function TutorModal({
 
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
   const [reusableStory, setReusableStory] = useState<Story | null>(null);
+  const [inProgressSession, setInProgressSession] = useState<TutorSessionRow | null>(null);
   const [existingFlashcards, setExistingFlashcards] = useState<FlashcardRow[]>([]);
   const [story, setStory] = useState<Story | null>(null);
   const [adhd, setAdhd] = useState(false);
@@ -85,17 +86,25 @@ export function TutorModal({
   };
   const breakStreak = () => setStreak(0);
 
-  // ─── Initial check: is there a story/flashcard set to reuse for this chapter? ───
+  // ─── Initial check: reusable story/flashcards, and — the crash-recovery path —
+  // a session left "in_progress" because the app never got a chance to call
+  // abandon_tutor_session (force-quit, crash, laptop killed mid-session). ───
   useEffect(() => {
     (async () => {
       try {
-        const [flashcardsRes, lastCompleted] = await Promise.all([
+        const [flashcardsRes, lastCompleted, unfinished] = await Promise.all([
           api.listFlashcards(chapterId),
           api.getLatestCompletedSession(chapterId),
+          api.getInProgressSession(chapterId),
         ]);
         setExistingFlashcards(flashcardsRes);
         if (lastCompleted?.story_json) {
           setReusableStory(JSON.parse(lastCompleted.story_json));
+        }
+        if (unfinished) {
+          setInProgressSession(unfinished);
+          setPhase("resume-prompt");
+          return;
         }
       } catch (e: any) {
         setError(e?.message ?? String(e));
@@ -111,6 +120,93 @@ export function TutorModal({
     setPhase("transition");
   };
 
+  /** Reconstructs in-memory state from a session's persisted JSON and jumps to
+   * the start of whichever stage wasn't finished yet. Granularity is per-stage,
+   * not per-step within a stage — Découverte always restarts at concept 1 even
+   * if you were on concept 5, since only stage-completion snapshots are
+   * persisted. Still a large improvement over silently redoing everything. */
+  const resumeSession = async (session: TutorSessionRow) => {
+    setError(null);
+    setPhase("loading");
+    try {
+      setTutorSessionId(session.id);
+      setAdhd(session.adhd_mode_used);
+      const sessionDiff = (DIFFS as readonly string[]).includes(session.difficulty) ? (session.difficulty as Diff) : DIFFS[0];
+      setDiff(sessionDiff);
+
+      const storyData: Story | null = session.story_json ? JSON.parse(session.story_json) : null;
+      if (!storyData) {
+        // Crashed before the story itself was even saved — nothing usable to resume into.
+        await api.abandonTutorSession(session.id);
+        setTutorSessionId(null);
+        setPhase("input");
+        return;
+      }
+      setStory(storyData);
+      contentRef.current = storyDigest(storyData);
+
+      const cards = existingFlashcards.length ? existingFlashcards : await api.listFlashcards(chapterId);
+      setFlashcards(cards);
+
+      const confs: ConceptConfidence[] = session.confidence_json ? JSON.parse(session.confidence_json) : [];
+      if (!session.confidence_json) {
+        setPhase("decouverte");
+        return;
+      }
+      setConfidences(confs);
+
+      const missed: QcmQuestion[] = session.qcm_results_json ? JSON.parse(session.qcm_results_json) : [];
+      if (session.qcm_score == null || session.qcm_total == null) {
+        setPhase("flashcards");
+        return;
+      }
+      setQcmResult({ score: session.qcm_score, total: session.qcm_total, missed });
+      setFlashStats({ fails: 0, total: cards.length });
+      setEffDiff(sessionDiff);
+
+      if (!session.socratique_transcript_json) {
+        setPhase("socratique");
+        return;
+      }
+
+      if (!session.exercice_json) {
+        setPhase("exercice");
+        return;
+      }
+
+      // Everything through the case study was saved but complete_tutor_session
+      // never ran (crashed in the gap between that save and the write-back) —
+      // finish the write-back now instead of asking the student to redo it.
+      const parsedExercice: { correction: ExoCorrection | null } = JSON.parse(session.exercice_json);
+      if (parsedExercice.correction) {
+        const totalPts = parsedExercice.correction.corrections?.reduce((s, c) => s + (c.bareme || 0), 0) || 0;
+        const gotPts =
+          parsedExercice.correction.total ?? parsedExercice.correction.corrections?.reduce((s, c) => s + (c.note || 0), 0) ?? 0;
+        setExoResult({ got: gotPts, total: totalPts });
+      }
+      setPhase("bilan");
+      const missedThemes = [...new Set(missed.map((q) => q.theme || "Général"))];
+      const overconfidenceCount = overconfidentTitles(confs, missedThemes).length;
+      const result = await api.completeTutorSession(session.id, avgConfidence(confs), overconfidenceCount);
+      setSchedule({ boxLevel: result.box_level, outcome: result.outcome, nextReviewDate: result.next_review_date });
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setPhase("input");
+    }
+  };
+
+  const handleAbandonAndRestart = async () => {
+    if (inProgressSession) {
+      try {
+        await api.abandonTutorSession(inProgressSession.id);
+      } catch {
+        /* best-effort — starting fresh shouldn't be blocked by this */
+      }
+    }
+    setInProgressSession(null);
+    setPhase("input");
+  };
+
   const handleStart = async (cfg: StartConfig) => {
     setDiff(cfg.diff);
     setAdhd(cfg.adhd);
@@ -120,7 +216,7 @@ export function TutorModal({
     const sourceType: "paste" | "pdf" | "image" | null = cfg.fileContent ? cfg.fileContent.type === "document" ? "pdf" : "image" : cfg.text ? "paste" : null;
 
     try {
-      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd);
+      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff);
       setTutorSessionId(session.id);
 
       let storyData: Story;
@@ -298,7 +394,7 @@ export function TutorModal({
   };
 
   const currentStageIdx = STAGE_ICONS.findIndex((s) => s.id === phase);
-  const inSession = !["checking", "input", "loading", "bilan"].includes(phase);
+  const inSession = !["checking", "resume-prompt", "input", "loading", "bilan"].includes(phase);
 
   return (
     <div className={`tutor-modal${adhd ? " tutor-nofx" : ""}`}>
@@ -334,6 +430,25 @@ export function TutorModal({
         )}
 
         {phase === "checking" && <TutorSpin text="Chargement…" />}
+
+        {phase === "resume-prompt" && inProgressSession && (
+          <div className="tutor-card" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>⏸</div>
+            <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-pri)", marginBottom: 8 }}>Session interrompue</h3>
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
+              Une session sur ce chapitre a été laissée en cours, sans être terminée — probablement une fermeture inattendue. Rien
+              n'a été perdu jusqu'à ce point.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="tutor-bs" style={{ flex: 1 }} onClick={handleAbandonAndRestart}>
+                Recommencer à zéro
+              </button>
+              <button className="tutor-bp" style={{ flex: 2 }} onClick={() => resumeSession(inProgressSession)}>
+                Reprendre →
+              </button>
+            </div>
+          </div>
+        )}
 
         {phase === "input" && <InputPhase chapterName={chapterName} reusableStory={reusableStory} onStart={handleStart} />}
 

@@ -23,14 +23,15 @@ fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow
         exercice_json: row.get(12)?,
         bilan_json: row.get(13)?,
         adhd_mode_used: row.get::<_, i64>(14)? != 0,
-        started_at: row.get(15)?,
-        completed_at: row.get(16)?,
+        difficulty: row.get(15)?,
+        started_at: row.get(16)?,
+        completed_at: row.get(17)?,
     })
 }
 
 const TUTOR_SESSION_COLUMNS: &str = "id, chapter_id, status, input_source_type, story_json, concepts_json,
     confidence_json, qcm_json, qcm_results_json, qcm_score, qcm_total,
-    socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, started_at, completed_at";
+    socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, difficulty, started_at, completed_at";
 
 fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessionRow> {
     conn.query_row(
@@ -40,17 +41,20 @@ fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessio
     )
 }
 
-/// Reuses an in-progress session for this chapter if one exists (e.g. the app
-/// was closed mid-session), otherwise starts a fresh one. Story/flashcards
-/// from a *completed* prior session are fetched separately via
-/// `get_latest_completed_session` / `list_flashcards` so they can be reused
-/// without regenerating.
+/// Reuses an in-progress session for this chapter if one exists, otherwise
+/// starts a fresh one. The frontend is expected to have already resolved any
+/// existing in-progress session via `get_in_progress_session` (offering the
+/// user a Resume/Start-fresh choice, abandoning the old row on "fresh") — the
+/// lookup here is a safety net, not the primary resume mechanism. `difficulty`
+/// is only used when a new row is created; a reused row keeps whatever
+/// difficulty it was originally started with.
 #[tauri::command]
 pub fn start_or_resume_tutor_session(
     db: State<DbState>,
     chapter_id: i64,
     input_source_type: Option<String>,
     adhd_mode: bool,
+    difficulty: String,
 ) -> Result<TutorSessionRow, String> {
     with_conn(&db, |conn| {
         let existing: Option<i64> = conn
@@ -66,8 +70,8 @@ pub fn start_or_resume_tutor_session(
         }
 
         conn.execute(
-            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used) VALUES (?1, ?2, ?3)",
-            params![chapter_id, input_source_type, adhd_mode as i64],
+            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty) VALUES (?1, ?2, ?3, ?4)",
+            params![chapter_id, input_source_type, adhd_mode as i64, difficulty],
         )?;
         let id = conn.last_insert_rowid();
         get_tutor_session(conn, id)
@@ -81,6 +85,29 @@ pub fn get_latest_completed_session(db: State<DbState>, chapter_id: i64) -> Resu
             &format!(
                 "SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions
                  WHERE chapter_id = ?1 AND status = 'completed' ORDER BY id DESC LIMIT 1"
+            ),
+            params![chapter_id],
+            row_to_tutor_session,
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+    })
+}
+
+/// The session a chapter was mid-way through when the app was last closed —
+/// gracefully (Pause is just UI state, doesn't affect this) or otherwise
+/// (crash / force-quit, which never got to call `abandon_tutor_session`).
+/// Drives the Resume/Start-fresh prompt in the tutor UI.
+#[tauri::command]
+pub fn get_in_progress_session(db: State<DbState>, chapter_id: i64) -> Result<Option<TutorSessionRow>, String> {
+    with_conn(&db, |conn| {
+        conn.query_row(
+            &format!(
+                "SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions
+                 WHERE chapter_id = ?1 AND status = 'in_progress' ORDER BY id DESC LIMIT 1"
             ),
             params![chapter_id],
             row_to_tutor_session,

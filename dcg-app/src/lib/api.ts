@@ -88,15 +88,20 @@ export const startOrResumeTutorSession = (
   chapterId: number,
   inputSourceType: "paste" | "pdf" | "image" | null,
   adhdMode: boolean,
+  difficulty: string,
 ) =>
   invoke<TutorSessionRow>("start_or_resume_tutor_session", {
     chapterId,
     inputSourceType,
     adhdMode,
+    difficulty,
   });
 
 export const getLatestCompletedSession = (chapterId: number) =>
   invoke<TutorSessionRow | null>("get_latest_completed_session", { chapterId });
+
+export const getInProgressSession = (chapterId: number) =>
+  invoke<TutorSessionRow | null>("get_in_progress_session", { chapterId });
 
 export interface TutorSessionPatch {
   story_json?: string | null;

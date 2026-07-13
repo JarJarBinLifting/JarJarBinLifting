@@ -59,6 +59,7 @@ export interface TutorSessionRow {
   exercice_json: string | null;
   bilan_json: string | null;
   adhd_mode_used: boolean;
+  difficulty: string;
   started_at: string;
   completed_at: string | null;
 }

@@ -57,6 +57,7 @@ pub fn run() {
             commands::planner::set_meta,
             commands::tutor::start_or_resume_tutor_session,
             commands::tutor::get_latest_completed_session,
+            commands::tutor::get_in_progress_session,
             commands::tutor::save_tutor_session_progress,
             commands::tutor::abandon_tutor_session,
             commands::tutor::list_flashcards,
