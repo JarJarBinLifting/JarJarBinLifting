@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../../lib/api";
 import { MODEL_OPTIONS } from "../../lib/models";
 import { formatTokens, todayIso } from "../../lib/format";
@@ -12,19 +12,11 @@ const STORAGE_LABEL: Record<ApiKeyStatus["storage"], string> = {
   none: "aucune clé enregistrée",
 };
 
-export function SettingsScreen({
-  onboarding = false,
-  onDbReady,
-}: {
-  onboarding?: boolean;
-  onDbReady?: () => void;
-}) {
+export function SettingsScreen() {
   const [config, setConfig] = useState<LocalConfig | null>(null);
   const [keyStatus, setKeyStatus] = useState<ApiKeyStatus | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [testing, setTesting] = useState<"idle" | "ok" | "fail" | "running">("idle");
-  const [dbBusy, setDbBusy] = useState(false);
-  const [dbError, setDbError] = useState<string | null>(null);
 
   const refresh = () => {
     api.getLocalConfig().then(setConfig);
@@ -33,95 +25,28 @@ export function SettingsScreen({
 
   useEffect(refresh, []);
 
-  // In onboarding mode we don't have an AppStateProvider mounted yet, so the
-  // exam-date field (which depends on it) is skipped there entirely.
   return (
-    <div style={{ padding: onboarding ? "40px 16px" : 14, maxWidth: 640, margin: "0 auto" }}>
-      {onboarding && (
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>📚</div>
-          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, color: "var(--text)" }}>Bienvenue dans DCG Étude</h1>
-          <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
-            Avant de commencer, choisis où stocker tes données d'étude.
-          </p>
-        </div>
-      )}
-
-      {!onboarding && (
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>⚙️ Réglages</div>
-      )}
+    <div style={{ padding: 14, maxWidth: 640, margin: "0 auto" }}>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>⚙️ Réglages</div>
 
       <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>💾 Emplacement de la base de données</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>💾 Tes données</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
-          Choisis un dossier que tu synchronises déjà entre tes machines (iCloud Drive, Dropbox, OneDrive…). Sur ta
-          deuxième machine, choisis le même fichier <code>dcg.sqlite3</code> existant plutôt que d'en créer un nouveau.
+          Tout est stocké localement dans un seul fichier SQLite, créé automatiquement au premier lancement.
         </p>
-        {config?.db_path ? (
-          <div style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text)", background: "var(--card2)", padding: "8px 10px", borderRadius: 8, marginBottom: 10, wordBreak: "break-all" }}>
+        {config?.db_path && (
+          <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)", background: "var(--card2)", padding: "8px 10px", borderRadius: 8, marginBottom: 12, wordBreak: "break-all" }}>
             {config.db_path}
           </div>
-        ) : (
-          <div style={{ fontSize: 12, color: "var(--accent-yellow)", marginBottom: 10 }}>Aucun emplacement configuré.</div>
         )}
-        {dbError && <div style={{ fontSize: 12, color: "var(--accent-red)", marginBottom: 10 }}>{dbError}</div>}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            disabled={dbBusy}
-            onClick={async () => {
-              setDbError(null);
-              const folder = await openDialog({ directory: true, multiple: false, title: "Choisir le dossier synchronisé" });
-              if (!folder || typeof folder !== "string") return;
-              setDbBusy(true);
-              try {
-                const path = `${folder}/dcg.sqlite3`;
-                await api.setDbPath(path);
-                await api.seedDefaultCurriculum();
-                refresh();
-                onDbReady?.();
-              } catch (e) {
-                setDbError(String(e));
-              } finally {
-                setDbBusy(false);
-              }
-            }}
-            style={{ flex: 1, minWidth: 180, padding: "11px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
-          >
-            📁 Créer / utiliser dcg.sqlite3 dans un dossier
-          </button>
-          <button
-            disabled={dbBusy}
-            onClick={async () => {
-              setDbError(null);
-              const file = await openDialog({ multiple: false, title: "Choisir un fichier dcg.sqlite3 existant", filters: [{ name: "SQLite", extensions: ["sqlite3", "db"] }] });
-              if (!file || typeof file !== "string") return;
-              setDbBusy(true);
-              try {
-                await api.setDbPath(file);
-                await api.seedDefaultCurriculum();
-                refresh();
-                onDbReady?.();
-              } catch (e) {
-                setDbError(String(e));
-              } finally {
-                setDbBusy(false);
-              }
-            }}
-            style={{ flex: 1, minWidth: 180, padding: "11px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
-          >
-            📄 Ouvrir un fichier existant (2ᵉ machine)
-          </button>
-        </div>
+        <ExportButton />
       </section>
-
-      {!onboarding && config?.db_path && <ExportSection />}
 
       <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🔑 Clé API Anthropic</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
           Le tuteur IA a besoin d'une clé API Anthropic (console.anthropic.com), facturée à l'usage — ce n'est pas ton
-          abonnement claude.ai, qui ne peut pas être connecté à une application tierce. La clé reste sur cette machine
-          et n'est jamais placée dans le dossier synchronisé.
+          abonnement claude.ai, qui ne peut pas être connecté à une application tierce.
         </p>
         {keyStatus && (
           <div style={{ fontSize: 12, color: keyStatus.has_key ? "var(--accent-green)" : "var(--muted)", marginBottom: 10 }}>
@@ -181,55 +106,48 @@ export function SettingsScreen({
         </div>
       </section>
 
-      {!onboarding && <ModelSection />}
-      {!onboarding && <UsageSection />}
-      {!onboarding && <ExamDateSection />}
+      <ModelSection />
+      <UsageSection />
+      <ExamDateSection />
     </div>
   );
 }
 
-function ExportSection() {
+function ExportButton() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<"idle" | "ok" | "fail">("idle");
   const [errMsg, setErrMsg] = useState("");
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🗄️ Sauvegarde manuelle</div>
-      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
-        En plus de la sauvegarde automatique créée avant chaque mise à jour, tu peux exporter une copie complète de tes
-        données à tout moment — pratique avant une manipulation risquée, ou juste pour dormir tranquille.
-      </p>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button
-          disabled={busy}
-          onClick={async () => {
-            setResult("idle");
-            const destination = await saveDialog({
-              title: "Enregistrer la sauvegarde",
-              defaultPath: `dcg-sauvegarde-${todayIso()}.sqlite3`,
-              filters: [{ name: "SQLite", extensions: ["sqlite3"] }],
-            });
-            if (!destination) return;
-            setBusy(true);
-            try {
-              await api.exportDatabase(destination);
-              setResult("ok");
-            } catch (e) {
-              setErrMsg(String(e));
-              setResult("fail");
-            } finally {
-              setBusy(false);
-            }
-          }}
-          style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
-        >
-          {busy ? "Export en cours…" : "Exporter une copie…"}
-        </button>
-        {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Sauvegarde enregistrée</span>}
-        {result === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec : {errMsg}</span>}
-      </div>
-    </section>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <button
+        disabled={busy}
+        onClick={async () => {
+          setResult("idle");
+          const destination = await saveDialog({
+            title: "Enregistrer la sauvegarde",
+            defaultPath: `dcg-sauvegarde-${todayIso()}.sqlite3`,
+            filters: [{ name: "SQLite", extensions: ["sqlite3"] }],
+          });
+          if (!destination) return;
+          setBusy(true);
+          try {
+            await api.exportDatabase(destination);
+            setResult("ok");
+          } catch (e) {
+            setErrMsg(String(e));
+            setResult("fail");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
+      >
+        {busy ? "Export en cours…" : "🗄️ Exporter une sauvegarde…"}
+      </button>
+      {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Sauvegarde enregistrée</span>}
+      {result === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec : {errMsg}</span>}
+    </div>
   );
 }
 

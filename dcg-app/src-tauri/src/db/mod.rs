@@ -31,9 +31,8 @@ impl serde::Serialize for DbError {
     }
 }
 
-/// Opens (creating if needed) the sqlite file at `path`, applies pragmas
-/// appropriate for a file that lives inside a cloud-synced folder, and runs
-/// pending migrations.
+/// Opens (creating if needed) the sqlite file at `path`, applies pragmas for
+/// a single-machine local file, and runs pending migrations.
 pub fn open(path: &Path) -> Result<Connection, DbError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -45,13 +44,12 @@ pub fn open(path: &Path) -> Result<Connection, DbError> {
 
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "foreign_keys", true)?;
-    // Rollback-journal, NOT WAL: WAL leaves -wal/-shm sidecar files next to the
-    // main db file, which a cloud-sync client (iCloud/Dropbox/OneDrive) may only
-    // pick up post-checkpoint — risking an inconsistent copy on the other
-    // machine after an unclean shutdown. Keeping everything in one file matches
-    // the "portable single file in a synced folder" design.
-    conn.pragma_update(None, "journal_mode", "DELETE")?;
-    conn.pragma_update(None, "synchronous", "FULL")?;
+    // WAL: this file lives on local disk only (no cloud-sync client watching
+    // it), so there's no reason to avoid WAL's -wal/-shm sidecar files —
+    // and WAL gives meaningfully better write performance/concurrency than
+    // the rollback journal for a single-machine app.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
 
     migrate::run(&conn)?;
 

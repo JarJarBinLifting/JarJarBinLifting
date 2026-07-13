@@ -19,14 +19,30 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            match commands::settings::reopen_configured_db(handle, app.state::<db::DbState>()) {
-                Ok(true) => {
-                    if let Err(e) = commands::planner::seed_default_curriculum(app.state::<db::DbState>()) {
-                        log::error!("failed to seed default curriculum: {e}");
+            let opened = match commands::settings::reopen_configured_db(handle.clone(), app.state::<db::DbState>()) {
+                Ok(true) => true,
+                Ok(false) => {
+                    // First-ever run: auto-provision at the default location
+                    // instead of making the user pick a folder — this is a
+                    // single-machine app, there's nothing to configure.
+                    match commands::settings::ensure_default_db(handle, app.state::<db::DbState>()) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            log::error!("failed to auto-provision default database: {e}");
+                            false
+                        }
                     }
                 }
-                Ok(false) => log::info!("no database configured yet — waiting for first-run setup"),
-                Err(e) => log::error!("failed to reopen configured database: {e}"),
+                Err(e) => {
+                    log::error!("failed to reopen configured database: {e}");
+                    false
+                }
+            };
+
+            if opened {
+                if let Err(e) = commands::planner::seed_default_curriculum(app.state::<db::DbState>()) {
+                    log::error!("failed to seed default curriculum: {e}");
+                }
             }
 
             Ok(())
@@ -35,6 +51,7 @@ pub fn run() {
             commands::settings::get_local_config,
             commands::settings::set_db_path,
             commands::settings::reopen_configured_db,
+            commands::settings::ensure_default_db,
             commands::settings::save_api_key,
             commands::settings::get_api_key_status,
             commands::settings::clear_api_key,

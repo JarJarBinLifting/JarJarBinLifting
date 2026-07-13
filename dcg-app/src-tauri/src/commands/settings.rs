@@ -6,13 +6,20 @@ use tauri::{AppHandle, Manager, State};
 const SERVICE: &str = "com.amadou.dcgetude";
 const KEYRING_USER: &str = "anthropic-api-key";
 
-/// Local, non-synced settings — just a pointer to where the (synced) database
-/// file lives. Never put anything sensitive in here: this file sits in the OS
-/// app-config dir, not inside the user's cloud-synced folder, but the db_path
-/// value itself is harmless (a path, not a secret).
+/// Local settings — just a pointer to where the database file lives. Never
+/// put anything sensitive in here: this file sits in the OS app-config dir,
+/// but the db_path value itself is harmless (a path, not a secret).
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct LocalConfig {
     pub db_path: Option<String>,
+}
+
+/// Where the database lives if the user never chooses a custom location —
+/// the OS's standard per-app data directory. Single-machine app, so there's
+/// no need to make the user pick a folder on first run.
+fn default_db_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join("dcg.sqlite3"))
 }
 
 fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
@@ -43,10 +50,9 @@ pub fn get_local_config(app: AppHandle) -> LocalConfig {
     read_local_config(&app)
 }
 
-/// Points the app at a database file (new or existing — same call handles
-/// both "create my study db in this synced folder" on machine 1 and "open
-/// the existing one" on machine 2), opens it, runs migrations, and remembers
-/// the path for next launch.
+/// Points the app at a database file (e.g. the user relocating it for their
+/// own backup purposes — say, into a personal cloud-storage folder), opens
+/// it, runs migrations, and remembers the path for next launch.
 #[tauri::command]
 pub fn set_db_path(app: AppHandle, db: State<DbState>, path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
@@ -59,8 +65,9 @@ pub fn set_db_path(app: AppHandle, db: State<DbState>, path: String) -> Result<(
 }
 
 /// Called once at startup: if a db_path was already configured on a previous
-/// run, reopen it so the user isn't sent back through the folder picker every
-/// launch. Returns false if no location has been configured yet (first run).
+/// run, reopen it. Returns false if no location has been configured yet
+/// (first-ever run), in which case the caller should fall back to
+/// `ensure_default_db` to auto-provision one with no user interaction needed.
 #[tauri::command]
 pub fn reopen_configured_db(app: AppHandle, db: State<DbState>) -> Result<bool, String> {
     let cfg = read_local_config(&app);
@@ -72,6 +79,20 @@ pub fn reopen_configured_db(app: AppHandle, db: State<DbState>) -> Result<bool, 
         }
         None => Ok(false),
     }
+}
+
+/// First-ever run: silently creates the database at the default per-app data
+/// location and remembers it, so there's no folder-picker step between
+/// installing the app and using it. Safe to call again later (e.g. as a
+/// recovery action if something went wrong) — it's a no-op once a path is
+/// already configured.
+#[tauri::command]
+pub fn ensure_default_db(app: AppHandle, db: State<DbState>) -> Result<(), String> {
+    if read_local_config(&app).db_path.is_some() {
+        return Ok(());
+    }
+    let path = default_db_path(&app)?;
+    set_db_path(app, db, path.to_string_lossy().into_owned())
 }
 
 #[derive(Debug, Serialize)]

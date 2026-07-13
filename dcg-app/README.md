@@ -1,9 +1,9 @@
 # DCG Étude
 
 Desktop app (Tauri + React) that merges an AI-tutored study session per chapter with
-a DCG programme tracker and a spaced-repetition review agenda. Runs natively on
-macOS/Windows/Linux; syncs between two machines by storing its SQLite database
-inside a folder you already sync (iCloud Drive, Dropbox, OneDrive…).
+a DCG programme tracker and a spaced-repetition review agenda. Single-machine app —
+its SQLite database is created automatically in the OS app-data directory on first
+launch, no setup required.
 
 ## Running in development
 
@@ -26,14 +26,16 @@ Produces a platform-native bundle under `src-tauri/target/release/bundle/`.
 
 ## First run
 
-1. Settings → pick (or create) `dcg.sqlite3` inside a folder you sync between
-   your machines. On a second machine, point it at the *same* existing file
-   instead of creating a new one.
-2. Settings → add an Anthropic API key (console.anthropic.com — billed
+The database is created automatically — nothing to configure. Just:
+
+1. Settings → add an Anthropic API key (console.anthropic.com — billed
    per-token, separate from a claude.ai subscription, which cannot be
-   connected to a third-party app). The key is stored in the OS keychain and
-   never written into the synced database file.
-3. Optionally set an exam date for the dashboard countdown.
+   connected to a third-party app). The key is stored in the OS keychain.
+2. Optionally set an exam date for the dashboard countdown.
+
+Settings → "Exporter une sauvegarde" saves a portable copy of your data
+anywhere you like, any time — useful before a risky change, or just as a
+backup, since everything lives in that one local file.
 
 ## How it fits together
 
@@ -44,7 +46,9 @@ Produces a platform-native bundle under `src-tauri/target/release/bundle/`.
   (story-driven discovery → flashcards → QCM → Socratic dialogue → case study →
   summary), calling Anthropic through a Rust command
   (`src-tauri/src/commands/anthropic.rs`) so the API key never reaches the
-  webview.
+  webview. Every phase's output (story, flashcards, confidence ratings, QCM
+  results, the full Socratic transcript, the exercise + its correction) is
+  saved to the database as it happens, not just at the end.
 - **Agenda**: chapters return automatically for review based on a
   chapter-level Leitner scheduler (`src-tauri/src/commands/scheduler.rs`,
   unit-tested) driven by each session's QCM score and confidence ratings —

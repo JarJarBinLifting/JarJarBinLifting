@@ -84,16 +84,58 @@ function MainApp() {
 }
 
 export default function App() {
+  // Single-machine app: the database is auto-provisioned at a default
+  // location by the Rust setup() hook before the window even opens, so this
+  // should resolve to `true` almost instantly. The `false` branch only shows
+  // up if that auto-provisioning genuinely failed (e.g. a permissions issue
+  // on the app-data directory) — a rare recovery path, not the normal flow.
   const [dbConfigured, setDbConfigured] = useState<boolean | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getLocalConfig().then((cfg) => setDbConfigured(!!cfg.db_path));
   }, []);
 
+  const retry = async () => {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await api.ensureDefaultDb();
+      const cfg = await api.getLocalConfig();
+      setDbConfigured(!!cfg.db_path);
+    } catch (e) {
+      setRetryError(String(e));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
     <ThemeProvider>
       {dbConfigured === null && <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Chargement…</div>}
-      {dbConfigured === false && <SettingsScreen onboarding onDbReady={() => setDbConfigured(true)} />}
+      {dbConfigured === false && (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ maxWidth: 380, textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
+              Impossible de préparer la base de données
+            </h1>
+            <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+              L'application n'a pas pu créer son fichier de données au démarrage. Vérifie que le dossier de données de
+              l'application est accessible, puis réessaie.
+            </p>
+            {retryError && <p style={{ fontSize: 11, color: "var(--accent-red)", fontFamily: "monospace", marginBottom: 16 }}>{retryError}</p>}
+            <button
+              disabled={retrying}
+              onClick={retry}
+              style={{ padding: "10px 20px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600 }}
+            >
+              {retrying ? "Nouvelle tentative…" : "Réessayer"}
+            </button>
+          </div>
+        </div>
+      )}
       {dbConfigured === true && (
         <AppStateProvider>
           <MainApp />

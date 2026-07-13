@@ -18,6 +18,7 @@ import type {
 export const getLocalConfig = () => invoke<LocalConfig>("get_local_config");
 export const setDbPath = (path: string) => invoke<void>("set_db_path", { path });
 export const reopenConfiguredDb = () => invoke<boolean>("reopen_configured_db");
+export const ensureDefaultDb = () => invoke<void>("ensure_default_db");
 
 export const saveApiKey = (key: string) => invoke<ApiKeyStatus>("save_api_key", { key });
 export const getApiKeyStatus = () => invoke<ApiKeyStatus>("get_api_key_status");
