@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   ApiKeyStatus,
   Chapter,
@@ -13,17 +12,50 @@ import type {
   Ue,
 } from "./types";
 
+/// Every route this app talks to is same-origin (`/api/...`), served by the
+/// local Rust server — in dev, Vite proxies `/api` to it (see vite.config.ts).
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // non-JSON error body — fall back to statusText
+    }
+    throw new Error(message);
+  }
+
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : (undefined as T);
+}
+
+const get = <T>(path: string) => request<T>("GET", path);
+const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
+const patch = <T>(path: string, body?: unknown) => request<T>("PATCH", path, body ?? {});
+const put = <T>(path: string, body?: unknown) => request<T>("PUT", path, body ?? {});
+const del = <T>(path: string) => request<T>("DELETE", path);
+
 // ─── Settings ───
 
-export const getLocalConfig = () => invoke<LocalConfig>("get_local_config");
-export const setDbPath = (path: string) => invoke<void>("set_db_path", { path });
-export const reopenConfiguredDb = () => invoke<boolean>("reopen_configured_db");
-export const ensureDefaultDb = () => invoke<void>("ensure_default_db");
+export const getLocalConfig = () => get<LocalConfig>("/settings/local-config");
+export const setDbPath = (path: string) => post<void>("/settings/db-path", { path });
+export const ensureDefaultDb = () => post<void>("/settings/ensure-default-db");
 
-export const saveApiKey = (key: string) => invoke<ApiKeyStatus>("save_api_key", { key });
-export const getApiKeyStatus = () => invoke<ApiKeyStatus>("get_api_key_status");
-export const clearApiKey = () => invoke<void>("clear_api_key");
-export const exportDatabase = (destination: string) => invoke<void>("export_database", { destination });
+export const saveApiKey = (key: string) => post<ApiKeyStatus>("/settings/api-key", { key });
+export const getApiKeyStatus = () => get<ApiKeyStatus>("/settings/api-key/status");
+export const clearApiKey = () => del<void>("/settings/api-key");
+
+/// Not a fetch — the export route streams a file with a
+/// `Content-Disposition: attachment` header, so the browser handles the
+/// download natively when navigated to directly (see SettingsScreen).
+export const exportDatabaseUrl = "/api/settings/export";
 
 // ─── Anthropic ───
 
@@ -43,33 +75,38 @@ export const callAnthropic = (
   messages: AnthropicMessageInput[],
   maxTokens = 4096,
   model?: string,
-) => invoke<AnthropicCallResult>("call_anthropic", { system, messages, maxTokens, model });
+) => post<AnthropicCallResult>("/anthropic/call", { system, messages, maxTokens, model });
 
-export const testAnthropicConnection = () => invoke<boolean>("test_anthropic_connection");
+export const testAnthropicConnection = () => post<boolean>("/anthropic/test");
 
 // ─── Planner ───
 
-export const seedDefaultCurriculum = () => invoke<boolean>("seed_default_curriculum");
-export const listUes = () => invoke<Ue[]>("list_ues");
+export const seedDefaultCurriculum = () => post<boolean>("/planner/seed");
+export const listUes = () => get<Ue[]>("/planner/ues");
 export const updateUeNotes = (
   ueId: number,
   pointsForts: string | null,
   pointsFaibles: string | null,
   notes: string | null,
-) => invoke<void>("update_ue_notes", { ueId, pointsForts, pointsFaibles, notes });
+) =>
+  patch<void>(`/planner/ues/${ueId}/notes`, {
+    points_forts: pointsForts,
+    points_faibles: pointsFaibles,
+    notes,
+  });
 
-export const listChapters = (ueId: number) => invoke<Chapter[]>("list_chapters", { ueId });
-export const listAllChapters = () => invoke<Chapter[]>("list_all_chapters");
+export const listChapters = (ueId: number) => get<Chapter[]>(`/planner/ues/${ueId}/chapters`);
+export const listAllChapters = () => get<Chapter[]>("/planner/chapters");
 export const cycleChapterStatus = (chapterId: number) =>
-  invoke<Chapter>("cycle_chapter_status", { chapterId });
+  post<Chapter>(`/planner/chapters/${chapterId}/cycle-status`);
 
-export const listQcmScores = (chapterId: number) => invoke<QcmScoreRow[]>("list_qcm_scores", { chapterId });
-export const listAllQcmScores = () => invoke<QcmScoreRow[]>("list_all_qcm_scores");
+export const listQcmScores = (chapterId: number) => get<QcmScoreRow[]>(`/planner/chapters/${chapterId}/qcm-scores`);
+export const listAllQcmScores = () => get<QcmScoreRow[]>("/planner/qcm-scores");
 export const addQcmScore = (chapterId: number, date: string, score: number, total: number) =>
-  invoke<QcmScoreRow>("add_qcm_score", { chapterId, date, score, total });
-export const deleteQcmScore = (id: number) => invoke<void>("delete_qcm_score", { id });
+  post<QcmScoreRow>("/planner/qcm-scores", { chapter_id: chapterId, date, score, total });
+export const deleteQcmScore = (id: number) => del<void>(`/planner/qcm-scores/${id}`);
 
-export const listTimerSessions = () => invoke<SessionLogRow[]>("list_timer_sessions");
+export const listTimerSessions = () => get<SessionLogRow[]>("/planner/sessions");
 export const addTimerSession = (
   ueId: number | null,
   chapterId: number | null,
@@ -78,18 +115,18 @@ export const addTimerSession = (
   startedAt: string,
   endedAt: string,
 ) =>
-  invoke<SessionLogRow>("add_timer_session", {
-    ueId,
-    chapterId,
+  post<SessionLogRow>("/planner/sessions", {
+    ue_id: ueId,
+    chapter_id: chapterId,
     preset,
-    durationSeconds,
-    startedAt,
-    endedAt,
+    duration_seconds: durationSeconds,
+    started_at: startedAt,
+    ended_at: endedAt,
   });
-export const deleteTimerSession = (id: number) => invoke<void>("delete_timer_session", { id });
+export const deleteTimerSession = (id: number) => del<void>(`/planner/sessions/${id}`);
 
-export const getMeta = (key: string) => invoke<string | null>("get_meta", { key });
-export const setMeta = (key: string, value: string) => invoke<void>("set_meta", { key, value });
+export const getMeta = (key: string) => get<string | null>(`/planner/meta/${key}`);
+export const setMeta = (key: string, value: string) => put<void>(`/planner/meta/${key}`, { value });
 
 // ─── Tutor ───
 
@@ -101,20 +138,20 @@ export const startOrResumeTutorSession = (
   model: string,
   isRevision: boolean,
 ) =>
-  invoke<TutorSessionRow>("start_or_resume_tutor_session", {
-    chapterId,
-    inputSourceType,
-    adhdMode,
+  post<TutorSessionRow>("/tutor/sessions/start", {
+    chapter_id: chapterId,
+    input_source_type: inputSourceType,
+    adhd_mode: adhdMode,
     difficulty,
     model,
-    isRevision,
+    is_revision: isRevision,
   });
 
 export const getLatestCompletedSession = (chapterId: number) =>
-  invoke<TutorSessionRow | null>("get_latest_completed_session", { chapterId });
+  get<TutorSessionRow | null>(`/tutor/chapters/${chapterId}/latest-completed`);
 
 export const getInProgressSession = (chapterId: number) =>
-  invoke<TutorSessionRow | null>("get_in_progress_session", { chapterId });
+  get<TutorSessionRow | null>(`/tutor/chapters/${chapterId}/in-progress`);
 
 export interface TutorSessionPatch {
   story_json?: string | null;
@@ -131,32 +168,31 @@ export interface TutorSessionPatch {
   output_tokens?: number | null;
 }
 
-export const saveTutorSessionProgress = (id: number, patch: TutorSessionPatch) =>
-  invoke<TutorSessionRow>("save_tutor_session_progress", { id, patch });
+export const saveTutorSessionProgress = (id: number, sessionPatch: TutorSessionPatch) =>
+  patch<TutorSessionRow>(`/tutor/sessions/${id}`, sessionPatch);
 
-export const abandonTutorSession = (id: number) => invoke<void>("abandon_tutor_session", { id });
+export const abandonTutorSession = (id: number) => post<void>(`/tutor/sessions/${id}/abandon`);
 
-export const listFlashcards = (chapterId: number) => invoke<FlashcardRow[]>("list_flashcards", { chapterId });
+export const listFlashcards = (chapterId: number) => get<FlashcardRow[]>(`/tutor/chapters/${chapterId}/flashcards`);
 export const saveFlashcards = (
   chapterId: number,
   tutorSessionId: number,
   cards: { concept_id: string | null; question: string; answer: string }[],
-) => invoke<FlashcardRow[]>("save_flashcards", { chapterId, tutorSessionId, cards });
+) => post<FlashcardRow[]>(`/tutor/chapters/${chapterId}/flashcards`, { tutor_session_id: tutorSessionId, cards });
 export const updateFlashcardProgress = (id: number, correct: boolean) =>
-  invoke<FlashcardRow>("update_flashcard_progress", { id, correct });
+  post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, { correct });
 
 export const completeTutorSession = (
   tutorSessionId: number,
   avgConfidence: number,
   overconfidenceCount: number,
 ) =>
-  invoke<CompleteTutorSessionResult>("complete_tutor_session", {
-    tutorSessionId,
-    avgConfidence,
-    overconfidenceCount,
+  post<CompleteTutorSessionResult>(`/tutor/sessions/${tutorSessionId}/complete`, {
+    avg_confidence: avgConfidence,
+    overconfidence_count: overconfidenceCount,
   });
 
 export const listDueChapters = (withinDays: number) =>
-  invoke<DueChapter[]>("list_due_chapters", { withinDays });
+  get<DueChapter[]>(`/tutor/due-chapters?within_days=${withinDays}`);
 
-export const getUsageSummary = () => invoke<ModelUsageRow[]>("get_usage_summary");
+export const getUsageSummary = () => get<ModelUsageRow[]>("/tutor/usage");

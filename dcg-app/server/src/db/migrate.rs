@@ -52,7 +52,7 @@ pub fn run(conn: &Connection) -> rusqlite::Result<()> {
             (version, description),
         )?;
         tx.commit()?;
-        log::info!("applied migration {version}: {description}");
+        tracing::info!("applied migration {version}: {description}");
     }
 
     Ok(())

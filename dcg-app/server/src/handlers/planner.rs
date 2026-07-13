@@ -1,7 +1,10 @@
-use crate::db::{with_conn, DbState};
+use crate::appstate::{AppError, AppState};
+use crate::db::with_conn;
 use crate::models::{Chapter, QcmScoreRow, SessionLogRow, Ue};
+use axum::extract::{Path, State};
+use axum::Json;
 use rusqlite::{params, Connection};
-use tauri::State;
+use serde::Deserialize;
 
 /// The user's actual DCG programme, carried over from the original planner
 /// prototype so a fresh install isn't an empty shell.
@@ -37,10 +40,9 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
 ];
 
 /// Idempotent: only seeds if the `ues` table is empty, so it's safe to call
-/// on every startup right after `reopen_configured_db`/`set_db_path`.
-#[tauri::command]
-pub fn seed_default_curriculum(db: State<DbState>) -> Result<bool, String> {
-    with_conn(&db, |conn| {
+/// on every startup right after the db is opened.
+pub fn seed_default_curriculum(state: &AppState) -> Result<bool, String> {
+    with_conn(&state.db, |conn| {
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM ues", [], |r| r.get(0))?;
         if count > 0 {
             return Ok(false);
@@ -62,6 +64,10 @@ pub fn seed_default_curriculum(db: State<DbState>) -> Result<bool, String> {
     })
 }
 
+pub async fn seed_default_curriculum_route(State(state): State<AppState>) -> Result<Json<bool>, AppError> {
+    seed_default_curriculum(&state).map(Json).map_err(AppError)
+}
+
 pub(crate) fn row_to_ue(row: &rusqlite::Row) -> rusqlite::Result<Ue> {
     Ok(Ue {
         id: row.get(0)?,
@@ -75,9 +81,8 @@ pub(crate) fn row_to_ue(row: &rusqlite::Row) -> rusqlite::Result<Ue> {
     })
 }
 
-#[tauri::command]
-pub fn list_ues(db: State<DbState>) -> Result<Vec<Ue>, String> {
-    with_conn(&db, |conn| {
+pub async fn list_ues(State(state): State<AppState>) -> Result<Json<Vec<Ue>>, AppError> {
+    with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, code, name, position, color, points_forts, points_faibles, notes
              FROM ues ORDER BY position",
@@ -85,24 +90,27 @@ pub fn list_ues(db: State<DbState>) -> Result<Vec<Ue>, String> {
         let rows = stmt.query_map([], row_to_ue)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn update_ue_notes(
-    db: State<DbState>,
-    ue_id: i64,
-    points_forts: Option<String>,
-    points_faibles: Option<String>,
-    notes: Option<String>,
-) -> Result<(), String> {
-    with_conn(&db, |conn| {
+#[derive(Debug, Deserialize)]
+pub struct UpdateUeNotesRequest {
+    pub points_forts: Option<String>,
+    pub points_faibles: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub async fn update_ue_notes(State(state): State<AppState>, Path(ue_id): Path<i64>, Json(body): Json<UpdateUeNotesRequest>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute(
             "UPDATE ues SET points_forts = ?1, points_faibles = ?2, notes = ?3, updated_at = datetime('now')
              WHERE id = ?4",
-            params![points_forts, points_faibles, notes, ue_id],
+            params![body.points_forts, body.points_faibles, body.notes, ue_id],
         )?;
         Ok(())
     })
+    .map_err(AppError)
 }
 
 pub(crate) fn row_to_chapter(row: &rusqlite::Row) -> rusqlite::Result<Chapter> {
@@ -115,24 +123,24 @@ pub(crate) fn row_to_chapter(row: &rusqlite::Row) -> rusqlite::Result<Chapter> {
     })
 }
 
-#[tauri::command]
-pub fn list_chapters(db: State<DbState>, ue_id: i64) -> Result<Vec<Chapter>, String> {
-    with_conn(&db, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, ue_id, name, position, status FROM chapters WHERE ue_id = ?1 ORDER BY position",
-        )?;
+pub async fn list_chapters(State(state): State<AppState>, Path(ue_id): Path<i64>) -> Result<Json<Vec<Chapter>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare("SELECT id, ue_id, name, position, status FROM chapters WHERE ue_id = ?1 ORDER BY position")?;
         let rows = stmt.query_map(params![ue_id], row_to_chapter)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn list_all_chapters(db: State<DbState>) -> Result<Vec<Chapter>, String> {
-    with_conn(&db, |conn| {
+pub async fn list_all_chapters(State(state): State<AppState>) -> Result<Json<Vec<Chapter>>, AppError> {
+    with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare("SELECT id, ue_id, name, position, status FROM chapters ORDER BY ue_id, position")?;
         let rows = stmt.query_map([], row_to_chapter)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 fn cycle_status(current: &str) -> &'static str {
@@ -144,11 +152,7 @@ fn cycle_status(current: &str) -> &'static str {
 }
 
 pub fn set_chapter_status(conn: &Connection, chapter_id: i64, new_status: &str) -> rusqlite::Result<Chapter> {
-    let old_status: String = conn.query_row(
-        "SELECT status FROM chapters WHERE id = ?1",
-        params![chapter_id],
-        |r| r.get(0),
-    )?;
+    let old_status: String = conn.query_row("SELECT status FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
 
     conn.execute(
         "UPDATE chapters SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -166,16 +170,13 @@ pub fn set_chapter_status(conn: &Connection, chapter_id: i64, new_status: &str) 
     )
 }
 
-#[tauri::command]
-pub fn cycle_chapter_status(db: State<DbState>, chapter_id: i64) -> Result<Chapter, String> {
-    with_conn(&db, |conn| {
-        let current: String = conn.query_row(
-            "SELECT status FROM chapters WHERE id = ?1",
-            params![chapter_id],
-            |r| r.get(0),
-        )?;
+pub async fn cycle_chapter_status(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Chapter>, AppError> {
+    with_conn(&state.db, |conn| {
+        let current: String = conn.query_row("SELECT status FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
         set_chapter_status(conn, chapter_id, cycle_status(&current))
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 pub(crate) fn row_to_qcm(row: &rusqlite::Row) -> rusqlite::Result<QcmScoreRow> {
@@ -190,9 +191,8 @@ pub(crate) fn row_to_qcm(row: &rusqlite::Row) -> rusqlite::Result<QcmScoreRow> {
     })
 }
 
-#[tauri::command]
-pub fn list_qcm_scores(db: State<DbState>, chapter_id: i64) -> Result<Vec<QcmScoreRow>, String> {
-    with_conn(&db, |conn| {
+pub async fn list_qcm_scores(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
+    with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, chapter_id, tutor_session_id, date, score, total, source
              FROM qcm_scores WHERE chapter_id = ?1 ORDER BY date, id",
@@ -200,31 +200,33 @@ pub fn list_qcm_scores(db: State<DbState>, chapter_id: i64) -> Result<Vec<QcmSco
         let rows = stmt.query_map(params![chapter_id], row_to_qcm)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn list_all_qcm_scores(db: State<DbState>) -> Result<Vec<QcmScoreRow>, String> {
-    with_conn(&db, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores",
-        )?;
+pub async fn list_all_qcm_scores(State(state): State<AppState>) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare("SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores")?;
         let rows = stmt.query_map([], row_to_qcm)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn add_qcm_score(
-    db: State<DbState>,
-    chapter_id: i64,
-    date: String,
-    score: i64,
-    total: i64,
-) -> Result<QcmScoreRow, String> {
-    with_conn(&db, |conn| {
+#[derive(Debug, Deserialize)]
+pub struct AddQcmScoreRequest {
+    pub chapter_id: i64,
+    pub date: String,
+    pub score: i64,
+    pub total: i64,
+}
+
+pub async fn add_qcm_score(State(state): State<AppState>, Json(body): Json<AddQcmScoreRequest>) -> Result<Json<QcmScoreRow>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO qcm_scores (chapter_id, date, score, total, source) VALUES (?1, ?2, ?3, ?4, 'manual')",
-            params![chapter_id, date, score, total],
+            params![body.chapter_id, body.date, body.score, body.total],
         )?;
         let id = conn.last_insert_rowid();
         conn.query_row(
@@ -233,14 +235,16 @@ pub fn add_qcm_score(
             row_to_qcm,
         )
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn delete_qcm_score(db: State<DbState>, id: i64) -> Result<(), String> {
-    with_conn(&db, |conn| {
+pub async fn delete_qcm_score(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM qcm_scores WHERE id = ?1", params![id])?;
         Ok(())
     })
+    .map_err(AppError)
 }
 
 fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionLogRow> {
@@ -255,9 +259,8 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionLogRow> {
     })
 }
 
-#[tauri::command]
-pub fn list_timer_sessions(db: State<DbState>) -> Result<Vec<SessionLogRow>, String> {
-    with_conn(&db, |conn| {
+pub async fn list_timer_sessions(State(state): State<AppState>) -> Result<Json<Vec<SessionLogRow>>, AppError> {
+    with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, ue_id, chapter_id, preset, duration_seconds, started_at, ended_at
              FROM sessions ORDER BY started_at DESC",
@@ -265,23 +268,26 @@ pub fn list_timer_sessions(db: State<DbState>) -> Result<Vec<SessionLogRow>, Str
         let rows = stmt.query_map([], row_to_session)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn add_timer_session(
-    db: State<DbState>,
-    ue_id: Option<i64>,
-    chapter_id: Option<i64>,
-    preset: Option<String>,
-    duration_seconds: i64,
-    started_at: String,
-    ended_at: String,
-) -> Result<SessionLogRow, String> {
-    with_conn(&db, |conn| {
+#[derive(Debug, Deserialize)]
+pub struct AddTimerSessionRequest {
+    pub ue_id: Option<i64>,
+    pub chapter_id: Option<i64>,
+    pub preset: Option<String>,
+    pub duration_seconds: i64,
+    pub started_at: String,
+    pub ended_at: String,
+}
+
+pub async fn add_timer_session(State(state): State<AppState>, Json(body): Json<AddTimerSessionRequest>) -> Result<Json<SessionLogRow>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO sessions (ue_id, chapter_id, preset, duration_seconds, started_at, ended_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![ue_id, chapter_id, preset, duration_seconds, started_at, ended_at],
+            params![body.ue_id, body.chapter_id, body.preset, body.duration_seconds, body.started_at, body.ended_at],
         )?;
         let id = conn.last_insert_rowid();
         conn.query_row(
@@ -290,35 +296,43 @@ pub fn add_timer_session(
             row_to_session,
         )
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn delete_timer_session(db: State<DbState>, id: i64) -> Result<(), String> {
-    with_conn(&db, |conn| {
+pub async fn delete_timer_session(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
         Ok(())
     })
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn get_meta(db: State<DbState>, key: String) -> Result<Option<String>, String> {
-    with_conn(&db, |conn| {
+pub async fn get_meta(State(state): State<AppState>, Path(key): Path<String>) -> Result<Json<Option<String>>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.query_row("SELECT value FROM app_meta WHERE key = ?1", params![key], |r| r.get(0))
             .or_else(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => Ok(None),
                 other => Err(other),
             })
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn set_meta(db: State<DbState>, key: String, value: String) -> Result<(), String> {
-    with_conn(&db, |conn| {
+#[derive(Debug, Deserialize)]
+pub struct SetMetaRequest {
+    pub value: String,
+}
+
+pub async fn set_meta(State(state): State<AppState>, Path(key): Path<String>, Json(body): Json<SetMetaRequest>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO app_meta (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![key, value],
+            params![key, body.value],
         )?;
         Ok(())
     })
+    .map_err(AppError)
 }

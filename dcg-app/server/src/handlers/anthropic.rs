@@ -1,7 +1,8 @@
-use crate::commands::settings::read_api_key;
+use crate::appstate::AppError;
+use crate::handlers::settings::read_api_key;
+use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::AppHandle;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -22,20 +23,21 @@ pub struct AnthropicResult {
     pub output_tokens: i64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallAnthropicRequest {
+    pub system: String,
+    pub messages: Vec<AnthropicMessage>,
+    pub max_tokens: Option<u32>,
+    pub model: Option<String>,
+}
+
 /// The only place in the whole app that talks to api.anthropic.com. The key
-/// is read Rust-side (see commands::settings::read_api_key) and never crosses
-/// the IPC boundary into the webview — the frontend only ever calls this
-/// command and gets text back.
-#[tauri::command]
-pub async fn call_anthropic(
-    app: AppHandle,
-    system: String,
-    messages: Vec<AnthropicMessage>,
-    max_tokens: Option<u32>,
-    model: Option<String>,
-) -> Result<AnthropicResult, String> {
-    let key = read_api_key(&app)
-        .ok_or_else(|| "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string())?;
+/// is read Rust-side (see handlers::settings::read_api_key) and never crosses
+/// into an HTTP response — the frontend only ever calls this endpoint and
+/// gets text back.
+async fn call_anthropic_inner(system: String, messages: Vec<AnthropicMessage>, max_tokens: Option<u32>, model: Option<String>) -> Result<AnthropicResult, String> {
+    let key = read_api_key().ok_or_else(|| "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string())?;
 
     let body = serde_json::json!({
         "model": model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
@@ -56,10 +58,7 @@ pub async fn call_anthropic(
         .map_err(|e| format!("Échec de la requête vers Anthropic : {e}"))?;
 
     let status = resp.status();
-    let payload: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Réponse Anthropic illisible : {e}"))?;
+    let payload: Value = resp.json().await.map_err(|e| format!("Réponse Anthropic illisible : {e}"))?;
 
     if !status.is_success() {
         let msg = payload
@@ -82,29 +81,22 @@ pub async fn call_anthropic(
         })
         .unwrap_or_default();
 
-    let input_tokens = payload
-        .get("usage")
-        .and_then(|u| u.get("input_tokens"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let output_tokens = payload
-        .get("usage")
-        .and_then(|u| u.get("output_tokens"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let input_tokens = payload.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let output_tokens = payload.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
 
-    Ok(AnthropicResult {
-        text,
-        input_tokens,
-        output_tokens,
-    })
+    Ok(AnthropicResult { text, input_tokens, output_tokens })
+}
+
+pub async fn call_anthropic(Json(body): Json<CallAnthropicRequest>) -> Result<Json<AnthropicResult>, AppError> {
+    call_anthropic_inner(body.system, body.messages, body.max_tokens, body.model)
+        .await
+        .map(Json)
+        .map_err(AppError)
 }
 
 /// Used by the Settings screen's "test connection" button.
-#[tauri::command]
-pub async fn test_anthropic_connection(app: AppHandle) -> Result<bool, String> {
-    call_anthropic(
-        app,
+pub async fn test_anthropic_connection() -> Result<Json<bool>, AppError> {
+    call_anthropic_inner(
         "Réponds uniquement par OK.".into(),
         vec![AnthropicMessage {
             role: "user".into(),
@@ -114,5 +106,6 @@ pub async fn test_anthropic_connection(app: AppHandle) -> Result<bool, String> {
         None,
     )
     .await
-    .map(|_| true)
+    .map(|_| Json(true))
+    .map_err(AppError)
 }

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../../lib/api";
 import { MODEL_OPTIONS } from "../../lib/models";
-import { formatTokens, todayIso } from "../../lib/format";
+import { formatTokens } from "../../lib/format";
 import type { ApiKeyStatus, LocalConfig, ModelUsageRow } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
 
@@ -114,39 +113,25 @@ export function SettingsScreen() {
 }
 
 function ExportButton() {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<"idle" | "ok" | "fail">("idle");
-  const [errMsg, setErrMsg] = useState("");
+  const [result, setResult] = useState<"idle" | "ok">("idle");
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <button
-        disabled={busy}
-        onClick={async () => {
-          setResult("idle");
-          const destination = await saveDialog({
-            title: "Enregistrer la sauvegarde",
-            defaultPath: `dcg-sauvegarde-${todayIso()}.sqlite3`,
-            filters: [{ name: "SQLite", extensions: ["sqlite3"] }],
-          });
-          if (!destination) return;
-          setBusy(true);
-          try {
-            await api.exportDatabase(destination);
-            setResult("ok");
-          } catch (e) {
-            setErrMsg(String(e));
-            setResult("fail");
-          } finally {
-            setBusy(false);
-          }
+        onClick={() => {
+          // The server streams the backup with a Content-Disposition header,
+          // so a plain anchor click triggers the browser's native download —
+          // no save-dialog needed, and it works the same in dev and prod.
+          const a = document.createElement("a");
+          a.href = api.exportDatabaseUrl;
+          a.click();
+          setResult("ok");
         }}
         style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
       >
-        {busy ? "Export en cours…" : "🗄️ Exporter une sauvegarde…"}
+        🗄️ Exporter une sauvegarde…
       </button>
-      {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Sauvegarde enregistrée</span>}
-      {result === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec : {errMsg}</span>}
+      {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Téléchargement lancé</span>}
     </div>
   );
 }

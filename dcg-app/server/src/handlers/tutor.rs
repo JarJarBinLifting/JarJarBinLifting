@@ -1,10 +1,12 @@
-use crate::commands::planner::{row_to_qcm, set_chapter_status};
-use crate::commands::scheduler::{self, SessionResult};
-use crate::db::{with_conn, DbState};
+use crate::appstate::{AppError, AppState};
+use crate::db::with_conn;
+use crate::handlers::planner::{row_to_qcm, set_chapter_status};
+use crate::handlers::scheduler::{self, SessionResult};
 use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, ModelUsageRow, TutorSessionRow};
+use axum::extract::{Path, Query, State};
+use axum::Json;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
-use tauri::State;
 
 fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow> {
     Ok(TutorSessionRow {
@@ -46,6 +48,16 @@ fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessio
     )
 }
 
+#[derive(Debug, Deserialize)]
+pub struct StartSessionRequest {
+    pub chapter_id: i64,
+    pub input_source_type: Option<String>,
+    pub adhd_mode: bool,
+    pub difficulty: String,
+    pub model: String,
+    pub is_revision: bool,
+}
+
 /// Reuses an in-progress session for this chapter if one exists, otherwise
 /// starts a fresh one. The frontend is expected to have already resolved any
 /// existing in-progress session via `get_in_progress_session` (offering the
@@ -53,21 +65,12 @@ fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessio
 /// lookup here is a safety net, not the primary resume mechanism. `difficulty`,
 /// `model`, and `is_revision` are only used when a new row is created; a
 /// reused row keeps whatever it was originally started with.
-#[tauri::command]
-pub fn start_or_resume_tutor_session(
-    db: State<DbState>,
-    chapter_id: i64,
-    input_source_type: Option<String>,
-    adhd_mode: bool,
-    difficulty: String,
-    model: String,
-    is_revision: bool,
-) -> Result<TutorSessionRow, String> {
-    with_conn(&db, |conn| {
+pub async fn start_or_resume_tutor_session(State(state): State<AppState>, Json(body): Json<StartSessionRequest>) -> Result<Json<TutorSessionRow>, AppError> {
+    with_conn(&state.db, |conn| {
         let existing: Option<i64> = conn
             .query_row(
                 "SELECT id FROM tutor_sessions WHERE chapter_id = ?1 AND status = 'in_progress' ORDER BY id DESC LIMIT 1",
-                params![chapter_id],
+                params![body.chapter_id],
                 |r| r.get(0),
             )
             .ok();
@@ -79,21 +82,19 @@ pub fn start_or_resume_tutor_session(
         conn.execute(
             "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model, is_revision)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![chapter_id, input_source_type, adhd_mode as i64, difficulty, model, is_revision as i64],
+            params![body.chapter_id, body.input_source_type, body.adhd_mode as i64, body.difficulty, body.model, body.is_revision as i64],
         )?;
         let id = conn.last_insert_rowid();
         get_tutor_session(conn, id)
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn get_latest_completed_session(db: State<DbState>, chapter_id: i64) -> Result<Option<TutorSessionRow>, String> {
-    with_conn(&db, |conn| {
+pub async fn get_latest_completed_session(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Option<TutorSessionRow>>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.query_row(
-            &format!(
-                "SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions
-                 WHERE chapter_id = ?1 AND status = 'completed' ORDER BY id DESC LIMIT 1"
-            ),
+            &format!("SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions WHERE chapter_id = ?1 AND status = 'completed' ORDER BY id DESC LIMIT 1"),
             params![chapter_id],
             row_to_tutor_session,
         )
@@ -103,20 +104,18 @@ pub fn get_latest_completed_session(db: State<DbState>, chapter_id: i64) -> Resu
             other => Err(other),
         })
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 /// The session a chapter was mid-way through when the app was last closed —
 /// gracefully (Pause is just UI state, doesn't affect this) or otherwise
 /// (crash / force-quit, which never got to call `abandon_tutor_session`).
 /// Drives the Resume/Start-fresh prompt in the tutor UI.
-#[tauri::command]
-pub fn get_in_progress_session(db: State<DbState>, chapter_id: i64) -> Result<Option<TutorSessionRow>, String> {
-    with_conn(&db, |conn| {
+pub async fn get_in_progress_session(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Option<TutorSessionRow>>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.query_row(
-            &format!(
-                "SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions
-                 WHERE chapter_id = ?1 AND status = 'in_progress' ORDER BY id DESC LIMIT 1"
-            ),
+            &format!("SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions WHERE chapter_id = ?1 AND status = 'in_progress' ORDER BY id DESC LIMIT 1"),
             params![chapter_id],
             row_to_tutor_session,
         )
@@ -126,6 +125,8 @@ pub fn get_in_progress_session(db: State<DbState>, chapter_id: i64) -> Result<Op
             other => Err(other),
         })
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 /// Only the fields that changed are set — pass `None` for anything the
@@ -150,13 +151,8 @@ pub struct TutorSessionPatch {
     pub output_tokens: Option<i64>,
 }
 
-#[tauri::command]
-pub fn save_tutor_session_progress(
-    db: State<DbState>,
-    id: i64,
-    patch: TutorSessionPatch,
-) -> Result<TutorSessionRow, String> {
-    with_conn(&db, |conn| {
+pub async fn save_tutor_session_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(patch): Json<TutorSessionPatch>) -> Result<Json<TutorSessionRow>, AppError> {
+    with_conn(&state.db, |conn| {
         conn.execute(
             "UPDATE tutor_sessions SET
                 story_json = COALESCE(?1, story_json),
@@ -191,17 +187,16 @@ pub fn save_tutor_session_progress(
         )?;
         get_tutor_session(conn, id)
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
-#[tauri::command]
-pub fn abandon_tutor_session(db: State<DbState>, id: i64) -> Result<(), String> {
-    with_conn(&db, |conn| {
-        conn.execute(
-            "UPDATE tutor_sessions SET status = 'abandoned', updated_at = datetime('now') WHERE id = ?1",
-            params![id],
-        )?;
+pub async fn abandon_tutor_session(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
+        conn.execute("UPDATE tutor_sessions SET status = 'abandoned', updated_at = datetime('now') WHERE id = ?1", params![id])?;
         Ok(())
     })
+    .map_err(AppError)
 }
 
 fn row_to_flashcard(row: &rusqlite::Row) -> rusqlite::Result<FlashcardRow> {
@@ -218,18 +213,16 @@ fn row_to_flashcard(row: &rusqlite::Row) -> rusqlite::Result<FlashcardRow> {
     })
 }
 
-const FLASHCARD_COLUMNS: &str =
-    "id, chapter_id, concept_id, question, answer, box_level, correct_streak, mastered, last_reviewed_at";
+const FLASHCARD_COLUMNS: &str = "id, chapter_id, concept_id, question, answer, box_level, correct_streak, mastered, last_reviewed_at";
 
-#[tauri::command]
-pub fn list_flashcards(db: State<DbState>, chapter_id: i64) -> Result<Vec<FlashcardRow>, String> {
-    with_conn(&db, |conn| {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"
-        ))?;
+pub async fn list_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"))?;
         let rows = stmt.query_map(params![chapter_id], row_to_flashcard)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,39 +232,43 @@ pub struct NewFlashcard {
     pub answer: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SaveFlashcardsRequest {
+    pub tutor_session_id: i64,
+    pub cards: Vec<NewFlashcard>,
+}
+
 /// Persists a freshly-generated flashcard set once per chapter. Callers
 /// should check `list_flashcards` first and skip generation entirely if the
 /// chapter already has cards, so they aren't regenerated every session.
-#[tauri::command]
-pub fn save_flashcards(
-    db: State<DbState>,
-    chapter_id: i64,
-    tutor_session_id: i64,
-    cards: Vec<NewFlashcard>,
-) -> Result<Vec<FlashcardRow>, String> {
-    with_conn(&db, |conn| {
-        for card in &cards {
+pub async fn save_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>, Json(body): Json<SaveFlashcardsRequest>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
+    with_conn(&state.db, |conn| {
+        for card in &body.cards {
             conn.execute(
                 "INSERT INTO flashcards (chapter_id, tutor_session_id, concept_id, question, answer)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![chapter_id, tutor_session_id, card.concept_id, card.question, card.answer],
+                params![chapter_id, body.tutor_session_id, card.concept_id, card.question, card.answer],
             )?;
         }
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"
-        ))?;
+        let mut stmt = conn.prepare(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"))?;
         let rows = stmt.query_map(params![chapter_id], row_to_flashcard)?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlashcardProgressRequest {
+    pub correct: bool,
 }
 
 /// Mirrors the flashcard-level Leitner queue: a correct pass advances the box
 /// and streak (mastered once the streak reaches 2), a miss resets both so the
 /// card recirculates.
-#[tauri::command]
-pub fn update_flashcard_progress(db: State<DbState>, id: i64, correct: bool) -> Result<FlashcardRow, String> {
-    with_conn(&db, |conn| {
-        if correct {
+pub async fn update_flashcard_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<FlashcardProgressRequest>) -> Result<Json<FlashcardRow>, AppError> {
+    with_conn(&state.db, |conn| {
+        if body.correct {
             conn.execute(
                 "UPDATE flashcards SET
                     correct_streak = correct_streak + 1,
@@ -294,25 +291,23 @@ pub fn update_flashcard_progress(db: State<DbState>, id: i64, correct: bool) -> 
                 params![id],
             )?;
         }
-        conn.query_row(
-            &format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"),
-            params![id],
-            row_to_flashcard,
-        )
+        conn.query_row(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"), params![id], row_to_flashcard)
     })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CompleteSessionRequest {
+    pub avg_confidence: f64,
+    pub overconfidence_count: i64,
 }
 
 /// The single write-back point from a finished tutor session into the
 /// planner's world: marks the session completed, logs the QCM score, updates
 /// the chapter-level Leitner schedule, and marks the chapter done.
-#[tauri::command]
-pub fn complete_tutor_session(
-    db: State<DbState>,
-    tutor_session_id: i64,
-    avg_confidence: f64,
-    overconfidence_count: i64,
-) -> Result<CompleteTutorSessionResult, String> {
-    with_conn(&db, |conn| {
+pub async fn complete_tutor_session(State(state): State<AppState>, Path(tutor_session_id): Path<i64>, Json(body): Json<CompleteSessionRequest>) -> Result<Json<CompleteTutorSessionResult>, AppError> {
+    with_conn(&state.db, |conn| {
         let (chapter_id, qcm_score, qcm_total): (i64, Option<i64>, Option<i64>) = conn.query_row(
             "SELECT chapter_id, qcm_score, qcm_total FROM tutor_sessions WHERE id = ?1",
             params![tutor_session_id],
@@ -343,18 +338,14 @@ pub fn complete_tutor_session(
         )?;
 
         let current_box: i64 = conn
-            .query_row(
-                "SELECT box FROM review_schedule WHERE chapter_id = ?1",
-                params![chapter_id],
-                |r| r.get(0),
-            )
+            .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
             .unwrap_or(1);
 
         let result = SessionResult {
             qcm_score,
             qcm_total,
-            avg_confidence,
-            overconfidence_count,
+            avg_confidence: body.avg_confidence,
+            overconfidence_count: body.overconfidence_count,
         };
         let upd = scheduler::next_schedule(current_box, result, today);
 
@@ -368,14 +359,7 @@ pub fn complete_tutor_session(
                 last_outcome = excluded.last_outcome,
                 last_tutor_session_id = excluded.last_tutor_session_id,
                 updated_at = datetime('now')",
-            params![
-                chapter_id,
-                upd.box_level,
-                upd.next_review_date.to_string(),
-                today_str,
-                upd.outcome.as_str(),
-                tutor_session_id,
-            ],
+            params![chapter_id, upd.box_level, upd.next_review_date.to_string(), today_str, upd.outcome.as_str(), tutor_session_id],
         )?;
 
         let chapter = set_chapter_status(conn, chapter_id, "done")?;
@@ -388,6 +372,13 @@ pub fn complete_tutor_session(
             next_review_date: upd.next_review_date.to_string(),
         })
     })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DueChaptersQuery {
+    pub within_days: i64,
 }
 
 /// Chapters whose `next_review_date` falls within `within_days` of today
@@ -395,10 +386,9 @@ pub fn complete_tutor_session(
 /// been through a tutor session have no `review_schedule` row and correctly
 /// don't show up here — they belong in the normal todo/ongoing chapter list,
 /// not the review agenda.
-#[tauri::command]
-pub fn list_due_chapters(db: State<DbState>, within_days: i64) -> Result<Vec<DueChapter>, String> {
-    with_conn(&db, |conn| {
-        let horizon = (chrono::Local::now().date_naive() + chrono::Duration::days(within_days)).to_string();
+pub async fn list_due_chapters(State(state): State<AppState>, Query(q): Query<DueChaptersQuery>) -> Result<Json<Vec<DueChapter>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let horizon = (chrono::Local::now().date_naive() + chrono::Duration::days(q.within_days)).to_string();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, u.id, u.code, u.name, rs.box, rs.next_review_date, rs.last_reviewed_date, rs.last_outcome
              FROM review_schedule rs
@@ -422,6 +412,8 @@ pub fn list_due_chapters(db: State<DbState>, within_days: i64) -> Result<Vec<Due
         })?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }
 
 /// Lifetime token usage grouped by model — the `model` column records which
@@ -430,9 +422,8 @@ pub fn list_due_chapters(db: State<DbState>, within_days: i64) -> Result<Vec<Due
 /// API's own `usage` field, so they're always accurate; converting to a
 /// dollar estimate is left to the UI, which can apply current published
 /// rates rather than this command guessing at pricing that changes over time.
-#[tauri::command]
-pub fn get_usage_summary(db: State<DbState>) -> Result<Vec<ModelUsageRow>, String> {
-    with_conn(&db, |conn| {
+pub async fn get_usage_summary(State(state): State<AppState>) -> Result<Json<Vec<ModelUsageRow>>, AppError> {
+    with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT model, COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0)
              FROM tutor_sessions
@@ -450,4 +441,6 @@ pub fn get_usage_summary(db: State<DbState>) -> Result<Vec<ModelUsageRow>, Strin
         })?;
         rows.collect()
     })
+    .map(Json)
+    .map_err(AppError)
 }

@@ -8,16 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "server:build": "cargo build --release --manifest-path server/Cargo.toml",
+    "server:dev": "cargo run --manifest-path server/Cargo.toml"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
