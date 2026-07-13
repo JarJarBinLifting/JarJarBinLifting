@@ -16,6 +16,7 @@ export interface BilanData {
   exoScore: number;
   exoTotal: number;
   adhd: boolean;
+  isRevision: boolean;
 }
 
 export interface ScheduleResult {
@@ -30,8 +31,18 @@ const OUTCOME_COPY: Record<ScheduleResult["outcome"], { label: string; color: st
   weak: { label: "Fragile — la prochaine révision arrive plus vite", color: "var(--t-err)" },
 };
 
-export function BilanPhase({ data, schedule, onFinish }: { data: BilanData; schedule: ScheduleResult | null; onFinish: () => void }) {
-  const { storyTitle, flashTotal, flashFails, qcmScore, qcmTotal, missed, difficulty, adapted, confidences, exoScore, exoTotal, adhd } = data;
+export function BilanPhase({
+  data,
+  schedule,
+  compteRendu,
+  onFinish,
+}: {
+  data: BilanData;
+  schedule: ScheduleResult | null;
+  compteRendu: string | null;
+  onFinish: () => void;
+}) {
+  const { storyTitle, flashTotal, flashFails, qcmScore, qcmTotal, missed, difficulty, adapted, confidences, exoScore, exoTotal, adhd, isRevision } = data;
   const pct = qcmTotal > 0 ? Math.round((qcmScore / qcmTotal) * 100) : 0;
   const level = pct >= 80 ? "Excellente" : pct >= 60 ? "Bonne" : pct >= 40 ? "En progression" : "À consolider";
   const lc = pct >= 80 ? "var(--t-ok)" : pct >= 60 ? "var(--t-acc)" : "var(--t-err)";
@@ -46,12 +57,12 @@ export function BilanPhase({ data, schedule, onFinish }: { data: BilanData; sche
   return (
     <div className="tutor-card" style={{ textAlign: "center" }}>
       <div style={{ fontSize: 48, marginBottom: 8 }}>{pct >= 80 ? "🏆" : pct >= 60 ? "📚" : "💪"}</div>
-      <h2 style={{ fontFamily: "var(--font-story)", fontSize: 20, color: "var(--t-pri)", marginBottom: 4 }}>Bilan de maîtrise</h2>
+      <h2 style={{ fontFamily: "var(--font-story)", fontSize: 20, color: "var(--t-pri)", marginBottom: 4 }}>{isRevision ? "Bilan de révision" : "Bilan de maîtrise"}</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>{storyTitle}</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10, marginBottom: 20 }}>
         {[
-          { v: flashFails === 0 ? "✓" : `${flashFails}✗`, l: `Flashcards (${flashTotal})`, c: flashFails <= 2 ? "var(--t-ok)" : "var(--t-acc)" },
+          ...(flashTotal ? [{ v: flashFails === 0 ? "✓" : `${flashFails}✗`, l: `Flashcards (${flashTotal})`, c: flashFails <= 2 ? "var(--t-ok)" : "var(--t-acc)" }] : []),
           { v: `${qcmScore}/${qcmTotal}`, l: `QCM${adapted ? " ⬆" : ""} (${difficulty})`, c: pct >= 80 ? "var(--t-ok)" : pct >= 60 ? "var(--t-acc)" : "var(--t-err)" },
           ...(exoTotal ? [{ v: `${exoScore}/${exoTotal}`, l: "Cas pratique", c: exoScore / exoTotal >= 0.6 ? "var(--t-ok)" : exoScore / exoTotal >= 0.4 ? "var(--t-acc)" : "var(--t-err)" }] : []),
           { v: `${pct}%`, l: "Maîtrise", c: lc },
@@ -73,6 +84,14 @@ export function BilanPhase({ data, schedule, onFinish }: { data: BilanData; sche
             : "Ce chapitre nécessite encore du travail — mais tu sais maintenant exactement où porter l'effort."}
         </p>
       </div>
+
+      {compteRendu && (
+        <div style={{ padding: 14, borderRadius: 10, borderLeft: "3px solid var(--t-pri)", textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
+          <strong style={{ color: "var(--t-pri)", fontSize: 13 }}>📝 Analyse de la session</strong>
+          <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.65, color: "var(--text)" }}>{compteRendu}</p>
+          <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--muted)" }}>Le tuteur relira cette note à ta prochaine révision de ce chapitre.</p>
+        </div>
+      )}
 
       {overconfident.length > 0 && (
         <div style={{ padding: 12, borderRadius: 10, borderLeft: "3px solid var(--t-err)", textAlign: "left", marginBottom: 14, background: "var(--t-erb)" }}>

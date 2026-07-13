@@ -64,6 +64,7 @@ pub struct TutorSessionRow {
     pub model: String,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    pub is_revision: bool,
     pub started_at: String,
     pub completed_at: Option<String>,
 }

@@ -3,12 +3,13 @@ import * as api from "../../lib/api";
 import type { ConceptConfidence, Exercice, ExoCorrection, FlashcardRow, Qcm, QcmQuestion, Story, TutorSessionRow } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
 import { formatTokens } from "../../lib/format";
-import { avgConfidence, overconfidentTitles } from "./analysis";
-import { genJson, setUsageListener } from "./llm";
+import { avgConfidence, buildSessionDigest, flashcardMasteryConfidence, overconfidentTitles } from "./analysis";
+import { genJson, genText, setUsageListener } from "./llm";
 import { DIFFS, bumpDiff, prompts, type Diff } from "./prompts";
 import "./tutor.css";
 
 import { InputPhase, type StartConfig } from "./phases/InputPhase";
+import { RevisionIntro } from "./phases/RevisionIntro";
 import { DecouvertePhase } from "./phases/DecouvertePhase";
 import { FlashcardsPhase } from "./phases/FlashcardsPhase";
 import { QCMPhase } from "./phases/QCMPhase";
@@ -18,9 +19,21 @@ import { BilanPhase, type ScheduleResult } from "./phases/BilanPhase";
 import { Transition, type TransitionSpec } from "./phases/Transition";
 import { TutorError, TutorSpin } from "./shared";
 
-type Phase = "checking" | "resume-prompt" | "input" | "loading" | "decouverte" | "transition" | "flashcards" | "qcm" | "socratique" | "exercice" | "bilan";
+type Phase =
+  | "checking"
+  | "resume-prompt"
+  | "revision-intro"
+  | "input"
+  | "loading"
+  | "decouverte"
+  | "transition"
+  | "flashcards"
+  | "qcm"
+  | "socratique"
+  | "exercice"
+  | "bilan";
 
-const STAGE_ICONS: { id: Phase; icon: string; label: string }[] = [
+const ALL_STAGES: { id: Phase; icon: string; label: string }[] = [
   { id: "decouverte", icon: "🧠", label: "Découverte" },
   { id: "flashcards", icon: "🃏", label: "Mémorisation" },
   { id: "qcm", icon: "✍️", label: "Vérification" },
@@ -34,6 +47,14 @@ function storyDigest(story: Story): string {
     `${story.titre}\n${story.scenario}\n\n` +
     story.etapes.map((e) => `${e.titre_court} — ${e.notion}: ${e.explication}`).join("\n")
   );
+}
+
+interface FinalizeCtx {
+  sessionId: number;
+  isRevision: boolean;
+  confidences: ConceptConfidence[];
+  qcmResult: { score: number; total: number; missed: QcmQuestion[] } | null;
+  exoResult: { got: number; total: number } | null;
 }
 
 export function TutorModal({
@@ -59,7 +80,10 @@ export function TutorModal({
   const burstKey = useRef(0);
 
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
+  const [isRevision, setIsRevision] = useState(false);
   const [reusableStory, setReusableStory] = useState<Story | null>(null);
+  const [reusableCompteRendu, setReusableCompteRendu] = useState<string | null>(null);
+  const [compteRenduText, setCompteRenduText] = useState<string | null>(null);
   const [inProgressSession, setInProgressSession] = useState<TutorSessionRow | null>(null);
   const [existingFlashcards, setExistingFlashcards] = useState<FlashcardRow[]>([]);
   const [story, setStory] = useState<Story | null>(null);
@@ -106,9 +130,10 @@ export function TutorModal({
   };
   const breakStreak = () => setStreak(0);
 
-  // ─── Initial check: reusable story/flashcards, and — the crash-recovery path —
-  // a session left "in_progress" because the app never got a chance to call
-  // abandon_tutor_session (force-quit, crash, laptop killed mid-session). ───
+  // ─── Initial check: reusable story/compte-rendu (→ short revision flow by
+  // default), and — the crash-recovery path — a session left "in_progress"
+  // because the app never got a chance to call abandon_tutor_session
+  // (force-quit, crash, laptop killed mid-session). ───
   useEffect(() => {
     (async () => {
       try {
@@ -118,14 +143,26 @@ export function TutorModal({
           api.getInProgressSession(chapterId),
         ]);
         setExistingFlashcards(flashcardsRes);
+        const hasStory = !!lastCompleted?.story_json;
         if (lastCompleted?.story_json) {
           setReusableStory(JSON.parse(lastCompleted.story_json));
+          const validDiff = (DIFFS as readonly string[]).includes(lastCompleted.difficulty) ? (lastCompleted.difficulty as Diff) : DIFFS[0];
+          setDiff(validDiff);
+          if (lastCompleted.bilan_json) {
+            try {
+              setReusableCompteRendu(JSON.parse(lastCompleted.bilan_json).text ?? null);
+            } catch {
+              /* older/malformed bilan_json — just skip it, not fatal */
+            }
+          }
         }
         if (unfinished) {
           setInProgressSession(unfinished);
           setPhase("resume-prompt");
           return;
         }
+        setPhase(hasStory ? "revision-intro" : "input");
+        return;
       } catch (e: any) {
         setError(e?.message ?? String(e));
       }
@@ -140,6 +177,49 @@ export function TutorModal({
     setPhase("transition");
   };
 
+  /** Shared end-of-session write-back for both flows: generates a compte-rendu
+   * grounded in this session's actual results (for the *next* revision to
+   * read), saves it, and completes the session (Leitner schedule update).
+   * Takes its inputs as explicit params rather than reading component state,
+   * since callers sometimes invoke this in the same tick as the setState
+   * calls that produced those values (state wouldn't have flushed yet). */
+  const finalizeSession = async (ctx: FinalizeCtx) => {
+    setPhase("bilan");
+    try {
+      const missedThemes = [...new Set((ctx.qcmResult?.missed ?? []).map((q) => q.theme || "Général"))];
+      const overconfident = overconfidentTitles(ctx.confidences, missedThemes);
+      const digest = buildSessionDigest({
+        confidences: ctx.confidences,
+        qcmResult: ctx.qcmResult,
+        exoResult: ctx.isRevision ? null : ctx.exoResult,
+        overconfident,
+      });
+
+      let compteRendu: string | null = null;
+      try {
+        compteRendu = await genText(prompts.compteRendu(ueCode), digest, 500, model);
+        setCompteRenduText(compteRendu);
+      } catch (e: any) {
+        // Non-fatal: the session still completes and the schedule still
+        // updates even if writing the compte-rendu itself failed.
+        setError("Compte-rendu : " + (e?.message ?? e));
+      }
+
+      await api.saveTutorSessionProgress(ctx.sessionId, {
+        ...(compteRendu ? { bilan_json: JSON.stringify({ text: compteRendu }) } : {}),
+        input_tokens: usageRef.current.inputTokens,
+        output_tokens: usageRef.current.outputTokens,
+      });
+
+      const avgConf = ctx.isRevision ? flashcardMasteryConfidence(await api.listFlashcards(chapterId)) : avgConfidence(ctx.confidences);
+      const overCount = ctx.isRevision ? 0 : overconfident.length;
+      const result = await api.completeTutorSession(ctx.sessionId, avgConf, overCount);
+      setSchedule({ boxLevel: result.box_level, outcome: result.outcome, nextReviewDate: result.next_review_date });
+    } catch (e: any) {
+      setError("Impossible de finaliser la session : " + (e?.message ?? e));
+    }
+  };
+
   /** Reconstructs in-memory state from a session's persisted JSON and jumps to
    * the start of whichever stage wasn't finished yet. Granularity is per-stage,
    * not per-step within a stage — Découverte always restarts at concept 1 even
@@ -151,6 +231,7 @@ export function TutorModal({
     try {
       setTutorSessionId(session.id);
       setAdhd(session.adhd_mode_used);
+      setIsRevision(session.is_revision);
       const sessionDiff = (DIFFS as readonly string[]).includes(session.difficulty) ? (session.difficulty as Diff) : DIFFS[0];
       setDiff(sessionDiff);
       usageRef.current = { inputTokens: session.input_tokens, outputTokens: session.output_tokens };
@@ -161,7 +242,7 @@ export function TutorModal({
         // Crashed before the story itself was even saved — nothing usable to resume into.
         await api.abandonTutorSession(session.id);
         setTutorSessionId(null);
-        setPhase("input");
+        setPhase(reusableStory ? "revision-intro" : "input");
         return;
       }
       setStory(storyData);
@@ -170,19 +251,23 @@ export function TutorModal({
       const cards = existingFlashcards.length ? existingFlashcards : await api.listFlashcards(chapterId);
       setFlashcards(cards);
 
-      const confs: ConceptConfidence[] = session.confidence_json ? JSON.parse(session.confidence_json) : [];
-      if (!session.confidence_json) {
-        setPhase("decouverte");
-        return;
+      let confs: ConceptConfidence[] = [];
+      if (!session.is_revision) {
+        confs = session.confidence_json ? JSON.parse(session.confidence_json) : [];
+        if (!session.confidence_json) {
+          setPhase("decouverte");
+          return;
+        }
+        setConfidences(confs);
       }
-      setConfidences(confs);
 
       const missed: QcmQuestion[] = session.qcm_results_json ? JSON.parse(session.qcm_results_json) : [];
       if (session.qcm_score == null || session.qcm_total == null) {
         setPhase("flashcards");
         return;
       }
-      setQcmResult({ score: session.qcm_score, total: session.qcm_total, missed });
+      const qcmResultLocal = { score: session.qcm_score, total: session.qcm_total, missed };
+      setQcmResult(qcmResultLocal);
       setFlashStats({ fails: 0, total: cards.length });
       setEffDiff(sessionDiff);
 
@@ -191,29 +276,34 @@ export function TutorModal({
         return;
       }
 
-      if (!session.exercice_json) {
-        setPhase("exercice");
-        return;
+      let exoResultLocal: { got: number; total: number } | null = null;
+      if (!session.is_revision) {
+        if (!session.exercice_json) {
+          setPhase("exercice");
+          return;
+        }
+        // Everything through the case study was saved but complete_tutor_session
+        // never ran (crashed in the gap between that save and the write-back).
+        const parsedExercice: { correction: ExoCorrection | null } = JSON.parse(session.exercice_json);
+        if (parsedExercice.correction) {
+          const totalPts = parsedExercice.correction.corrections?.reduce((s, c) => s + (c.bareme || 0), 0) || 0;
+          const gotPts =
+            parsedExercice.correction.total ?? parsedExercice.correction.corrections?.reduce((s, c) => s + (c.note || 0), 0) ?? 0;
+          exoResultLocal = { got: gotPts, total: totalPts };
+          setExoResult(exoResultLocal);
+        }
       }
 
-      // Everything through the case study was saved but complete_tutor_session
-      // never ran (crashed in the gap between that save and the write-back) —
-      // finish the write-back now instead of asking the student to redo it.
-      const parsedExercice: { correction: ExoCorrection | null } = JSON.parse(session.exercice_json);
-      if (parsedExercice.correction) {
-        const totalPts = parsedExercice.correction.corrections?.reduce((s, c) => s + (c.bareme || 0), 0) || 0;
-        const gotPts =
-          parsedExercice.correction.total ?? parsedExercice.correction.corrections?.reduce((s, c) => s + (c.note || 0), 0) ?? 0;
-        setExoResult({ got: gotPts, total: totalPts });
-      }
-      setPhase("bilan");
-      const missedThemes = [...new Set(missed.map((q) => q.theme || "Général"))];
-      const overconfidenceCount = overconfidentTitles(confs, missedThemes).length;
-      const result = await api.completeTutorSession(session.id, avgConfidence(confs), overconfidenceCount);
-      setSchedule({ boxLevel: result.box_level, outcome: result.outcome, nextReviewDate: result.next_review_date });
+      await finalizeSession({
+        sessionId: session.id,
+        isRevision: session.is_revision,
+        confidences: confs,
+        qcmResult: qcmResultLocal,
+        exoResult: exoResultLocal,
+      });
     } catch (e: any) {
       setError(e?.message ?? String(e));
-      setPhase("input");
+      setPhase(reusableStory ? "revision-intro" : "input");
     }
   };
 
@@ -226,30 +316,49 @@ export function TutorModal({
       }
     }
     setInProgressSession(null);
-    setPhase("input");
+    setPhase(reusableStory ? "revision-intro" : "input");
+  };
+
+  /** Short, targeted flow for a chapter already studied once: skips the
+   * narrative Découverte walk and the case-study Exercice entirely — just
+   * flashcards (auto-fast if already mastered), a QCM and Socratic dialogue
+   * targeted at the prior compte-rendu, then bilan. */
+  const handleStartRevision = async (adhdChoice: boolean) => {
+    if (!reusableStory) return;
+    setAdhd(adhdChoice);
+    setError(null);
+    setIsRevision(true);
+    setPhase("loading");
+    try {
+      const session = await api.startOrResumeTutorSession(chapterId, null, adhdChoice, diff, model, true);
+      setTutorSessionId(session.id);
+      setStory(reusableStory);
+      contentRef.current = storyDigest(reusableStory);
+      await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(reusableStory) });
+      setFlashcards(existingFlashcards);
+      setPhase("flashcards");
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setPhase("revision-intro");
+    }
   };
 
   const handleStart = async (cfg: StartConfig) => {
     setDiff(cfg.diff);
     setAdhd(cfg.adhd);
     setError(null);
+    setIsRevision(false);
     setPhase("loading");
 
     const sourceType: "paste" | "pdf" | "image" | null = cfg.fileContent ? cfg.fileContent.type === "document" ? "pdf" : "image" : cfg.text ? "paste" : null;
 
     try {
-      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff, model);
+      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff, model, false);
       setTutorSessionId(session.id);
 
-      let storyData: Story;
-      if (cfg.reuseStory && reusableStory) {
-        storyData = reusableStory;
-        contentRef.current = storyDigest(storyData);
-      } else {
-        const content: unknown = cfg.fileContent ? [cfg.fileContent, { type: "text", text: cfg.text.trim() || "Analyse le document." }] : cfg.text;
-        contentRef.current = content;
-        storyData = await genJson<Story>(prompts.story(ueCode), content, 8192, model);
-      }
+      const content: unknown = cfg.fileContent ? [cfg.fileContent, { type: "text", text: cfg.text.trim() || "Analyse le document." }] : cfg.text;
+      contentRef.current = content;
+      const storyData = await genJson<Story>(prompts.story(ueCode), content, 8192, model);
       setStory(storyData);
       await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(storyData) });
       setPhase("decouverte");
@@ -319,7 +428,7 @@ export function TutorModal({
     );
 
     try {
-      const q = await genJson<Qcm>(prompts.qcm(ueCode, nextDiff, story), contentRef.current ?? (story ? storyDigest(story) : ""), 4096, model);
+      const q = await genJson<Qcm>(prompts.qcm(ueCode, nextDiff, story, reusableCompteRendu), contentRef.current ?? (story ? storyDigest(story) : ""), 4096, model);
       setQcm(q);
       setTransitionSpec((t) => (t ? { ...t, loading: false } : t));
     } catch (e: any) {
@@ -365,17 +474,26 @@ export function TutorModal({
     return all.length ? all.slice(0, 3).join(", ") + (all.length > 3 ? "…" : "") : null;
   })();
 
-  const socSys = story ? prompts.socrate(ueCode, contentRef.current ? String(contentRef.current).slice(0, 3000) : storyDigest(story).slice(0, 3000), weakLabel) : "";
-  const exoSys = story ? prompts.exo(ueCode, effDiff || diff, story) + `\nContenu du cours:\n${contentRef.current ? String(contentRef.current).slice(0, 3000) : storyDigest(story).slice(0, 3000)}` : "";
+  const socSys = story
+    ? prompts.socrate(ueCode, contentRef.current ? String(contentRef.current).slice(0, 3000) : storyDigest(story).slice(0, 3000), weakLabel, reusableCompteRendu)
+    : "";
+  const exoSys = story
+    ? prompts.exo(ueCode, effDiff || diff, story, reusableCompteRendu) + `\nContenu du cours:\n${contentRef.current ? String(contentRef.current).slice(0, 3000) : storyDigest(story).slice(0, 3000)}`
+    : "";
 
   const onSocDone = async () => {
-    if (tutorSessionId) {
-      await api.saveTutorSessionProgress(tutorSessionId, {
-        socratique_transcript_json: JSON.stringify(socratiqueTranscript),
-        input_tokens: usageRef.current.inputTokens,
-        output_tokens: usageRef.current.outputTokens,
-      });
+    if (!tutorSessionId) return;
+    await api.saveTutorSessionProgress(tutorSessionId, {
+      socratique_transcript_json: JSON.stringify(socratiqueTranscript),
+      input_tokens: usageRef.current.inputTokens,
+      output_tokens: usageRef.current.outputTokens,
+    });
+
+    if (isRevision) {
+      await finalizeSession({ sessionId: tutorSessionId, isRevision: true, confidences, qcmResult, exoResult: null });
+      return;
     }
+
     goToTransition(
       {
         icon: "📝",
@@ -391,7 +509,8 @@ export function TutorModal({
   };
 
   const onExoDone = async (got: number, total: number) => {
-    setExoResult({ got, total });
+    const exoResultLocal = { got, total };
+    setExoResult(exoResultLocal);
     if (tutorSessionId && exerciceRef.current) {
       await api.saveTutorSessionProgress(tutorSessionId, {
         exercice_json: JSON.stringify(exerciceRef.current),
@@ -399,18 +518,8 @@ export function TutorModal({
         output_tokens: usageRef.current.outputTokens,
       });
     }
-    setPhase("bilan");
-
-    if (tutorSessionId) {
-      const missedThemes = [...new Set((qcmResult?.missed ?? []).map((q) => q.theme || "Général"))];
-      const overconfidenceCount = overconfidentTitles(confidences, missedThemes).length;
-      try {
-        const result = await api.completeTutorSession(tutorSessionId, avgConfidence(confidences), overconfidenceCount);
-        setSchedule({ boxLevel: result.box_level, outcome: result.outcome, nextReviewDate: result.next_review_date });
-      } catch (e: any) {
-        setError("Impossible de mettre à jour l'agenda : " + (e?.message ?? e));
-      }
-    }
+    if (!tutorSessionId) return;
+    await finalizeSession({ sessionId: tutorSessionId, isRevision: false, confidences, qcmResult, exoResult: exoResultLocal });
   };
 
   const handleClose = async () => {
@@ -429,8 +538,9 @@ export function TutorModal({
     onClose();
   };
 
-  const currentStageIdx = STAGE_ICONS.findIndex((s) => s.id === phase);
-  const inSession = !["checking", "resume-prompt", "input", "loading", "bilan"].includes(phase);
+  const stages = isRevision ? ALL_STAGES.filter((s) => s.id !== "decouverte" && s.id !== "exercice") : ALL_STAGES;
+  const currentStageIdx = stages.findIndex((s) => s.id === phase);
+  const inSession = !["checking", "resume-prompt", "revision-intro", "input", "loading", "bilan"].includes(phase);
 
   return (
     <div className={`tutor-modal${adhd ? " tutor-nofx" : ""}`}>
@@ -448,7 +558,7 @@ export function TutorModal({
 
         {inSession && !paused && (
           <div className="tutor-prg-track">
-            {STAGE_ICONS.map((s, i) => (
+            {stages.map((s, i) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 {i > 0 && <div className={`tutor-prg-line${i <= currentStageIdx ? " done" : ""}`} />}
                 <div className={`tutor-prg-dot${i < currentStageIdx ? " done" : i === currentStageIdx ? " active" : ""}`} title={s.label}>
@@ -491,12 +601,22 @@ export function TutorModal({
           </div>
         )}
 
-        {phase === "input" && <InputPhase chapterName={chapterName} reusableStory={reusableStory} onStart={handleStart} />}
+        {phase === "revision-intro" && reusableStory && (
+          <RevisionIntro
+            chapterName={chapterName}
+            story={reusableStory}
+            compteRendu={reusableCompteRendu}
+            onStart={handleStartRevision}
+            onRestart={() => setPhase("input")}
+          />
+        )}
+
+        {phase === "input" && <InputPhase chapterName={chapterName} onStart={handleStart} />}
 
         {phase === "loading" && (
           <div className="tutor-card" style={{ textAlign: "center", padding: 40 }}>
-            <TutorSpin text="Construction de ton histoire d'apprentissage…" />
-            <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>Le reste du parcours se prépare en arrière-plan pendant que tu découvres</p>
+            <TutorSpin text={isRevision ? "Préparation de la révision…" : "Construction de ton histoire d'apprentissage…"} />
+            {!isRevision && <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>Le reste du parcours se prépare en arrière-plan pendant que tu découvres</p>}
           </div>
         )}
 
@@ -583,8 +703,10 @@ export function TutorModal({
                   exoScore: exoResult?.got ?? 0,
                   exoTotal: exoResult?.total ?? 0,
                   adhd,
+                  isRevision,
                 }}
                 schedule={schedule}
+                compteRendu={compteRenduText}
                 onFinish={handleFinish}
               />
             )}

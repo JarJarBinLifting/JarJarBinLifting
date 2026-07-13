@@ -27,15 +27,16 @@ fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow
         model: row.get(16)?,
         input_tokens: row.get(17)?,
         output_tokens: row.get(18)?,
-        started_at: row.get(19)?,
-        completed_at: row.get(20)?,
+        is_revision: row.get::<_, i64>(19)? != 0,
+        started_at: row.get(20)?,
+        completed_at: row.get(21)?,
     })
 }
 
 const TUTOR_SESSION_COLUMNS: &str = "id, chapter_id, status, input_source_type, story_json, concepts_json,
     confidence_json, qcm_json, qcm_results_json, qcm_score, qcm_total,
     socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, difficulty, model, input_tokens,
-    output_tokens, started_at, completed_at";
+    output_tokens, is_revision, started_at, completed_at";
 
 fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessionRow> {
     conn.query_row(
@@ -49,9 +50,9 @@ fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessio
 /// starts a fresh one. The frontend is expected to have already resolved any
 /// existing in-progress session via `get_in_progress_session` (offering the
 /// user a Resume/Start-fresh choice, abandoning the old row on "fresh") — the
-/// lookup here is a safety net, not the primary resume mechanism. `difficulty`
-/// and `model` are only used when a new row is created; a reused row keeps
-/// whatever it was originally started with.
+/// lookup here is a safety net, not the primary resume mechanism. `difficulty`,
+/// `model`, and `is_revision` are only used when a new row is created; a
+/// reused row keeps whatever it was originally started with.
 #[tauri::command]
 pub fn start_or_resume_tutor_session(
     db: State<DbState>,
@@ -60,6 +61,7 @@ pub fn start_or_resume_tutor_session(
     adhd_mode: bool,
     difficulty: String,
     model: String,
+    is_revision: bool,
 ) -> Result<TutorSessionRow, String> {
     with_conn(&db, |conn| {
         let existing: Option<i64> = conn
@@ -75,9 +77,9 @@ pub fn start_or_resume_tutor_session(
         }
 
         conn.execute(
-            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![chapter_id, input_source_type, adhd_mode as i64, difficulty, model],
+            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model, is_revision)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![chapter_id, input_source_type, adhd_mode as i64, difficulty, model, is_revision as i64],
         )?;
         let id = conn.last_insert_rowid();
         get_tutor_session(conn, id)

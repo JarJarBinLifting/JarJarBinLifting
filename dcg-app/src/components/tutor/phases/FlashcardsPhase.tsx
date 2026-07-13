@@ -21,14 +21,25 @@ export function FlashcardsPhase({
   breakStreak: () => void;
 }) {
   const orderedCards = useMemo(() => {
-    const confByStep: Record<number, number> = {};
-    confidences.forEach((c) => {
-      confByStep[c.step + 1] = c.val;
-    });
+    // First-time sessions have fresh Découverte confidence ratings to order
+    // by. Revision sessions skip Découverte entirely, so there's nothing in
+    // `confidences` — fall back to ordering by demonstrated mastery instead
+    // (least-mastered first), which is exactly what a targeted revision pass
+    // should prioritize anyway.
+    if (confidences.length) {
+      const confByStep: Record<number, number> = {};
+      confidences.forEach((c) => {
+        confByStep[c.step + 1] = c.val;
+      });
+      return [...initialCards].sort((a, b) => {
+        const ca = confByStep[Number(a.concept_id)] ?? 2;
+        const cb = confByStep[Number(b.concept_id)] ?? 2;
+        return ca - cb;
+      });
+    }
     return [...initialCards].sort((a, b) => {
-      const ca = confByStep[Number(a.concept_id)] ?? 2;
-      const cb = confByStep[Number(b.concept_id)] ?? 2;
-      return ca - cb;
+      if (a.mastered !== b.mastered) return a.mastered ? 1 : -1;
+      return a.box_level - b.box_level;
     });
   }, [initialCards, confidences]);
 

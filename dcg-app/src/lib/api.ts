@@ -99,6 +99,7 @@ export const startOrResumeTutorSession = (
   adhdMode: boolean,
   difficulty: string,
   model: string,
+  isRevision: boolean,
 ) =>
   invoke<TutorSessionRow>("start_or_resume_tutor_session", {
     chapterId,
@@ -106,6 +107,7 @@ export const startOrResumeTutorSession = (
     adhdMode,
     difficulty,
     model,
+    isRevision,
   });
 
 export const getLatestCompletedSession = (chapterId: number) =>

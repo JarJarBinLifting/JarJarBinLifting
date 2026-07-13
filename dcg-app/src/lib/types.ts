@@ -63,6 +63,7 @@ export interface TutorSessionRow {
   model: string;
   input_tokens: number;
   output_tokens: number;
+  is_revision: boolean;
   started_at: string;
   completed_at: string | null;
 }

@@ -15,6 +15,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "usage tracking",
         include_str!("../../migrations/0003_usage_tracking.sql"),
     ),
+    (
+        4,
+        "revision mode",
+        include_str!("../../migrations/0004_revision_mode.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;

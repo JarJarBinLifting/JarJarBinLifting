@@ -44,11 +44,12 @@ Chaque carte référence son étape via "etape" (1-based).
 JSON pur: {"cards":[{"recto":"...","verso":"...","theme":"Thème court","etape":1}]}
 IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
 
-  qcm: (ue: string, diff: string, story: any | null) => `Expert DCG ${ue}. 10 QCM niveau ${diff}. ${
+  qcm: (ue: string, diff: string, story: any | null, priorCompteRendu?: string | null) => `Expert DCG ${ue}. 10 QCM niveau ${diff}. ${
     diff === "Annales" ? "Complexité annales DCG." : diff === "Intermédiaire" ? "Difficulté intermédiaire." : "Questions fondamentales."
   }
 ${story ? `2-3 questions peuvent réutiliser le contexte de ${story.personnage} (${story.entreprise}), les autres restent générales.` : ""}
 Inclus 2-3 questions de DISCRIMINATION entre notions voisines souvent confondues (distracteurs construits sur les confusions classiques).
+${priorCompteRendu ? `NOTE DE LA SESSION PRÉCÉDENTE SUR CE CHAPITRE : ${priorCompteRendu}\nAu moins 3 questions doivent cibler précisément ces points faibles.` : ""}
 JSON pur: {"questions":[{"question":"...","theme":"Thème court","options":["A) ...","B) ...","C) ...","D) ..."],"correct":0,"explication":"..."}]}
 IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
 
@@ -65,14 +66,16 @@ Explication: ${explication}
 ${KIND_TUTOR}
 En 1-2 phrases: confirme le juste, complète doucement si besoin. Français.`,
 
-  socrate: (ue: string, contenu: string, weak: string | null) => `Maître socratique DCG ${ue}. JAMAIS la réponse directement. Questions progressives.
+  socrate: (ue: string, contenu: string, weak: string | null, priorCompteRendu?: string | null) => `Maître socratique DCG ${ue}. JAMAIS la réponse directement. Questions progressives.
 ${KIND_TUTOR}
 Contenu: ${contenu}
-${weak ? `PRIORITÉ ABSOLUE — lacunes identifiées sur: ${weak}. Concentre tes questions dessus en premier.` : "Approfondis les concepts les plus importants."}
+${priorCompteRendu ? `NOTE DE LA SESSION PRÉCÉDENTE SUR CE CHAPITRE : ${priorCompteRendu}\nPriorise ces points AVANT toute autre chose.` : ""}
+${weak ? `PRIORITÉ ABSOLUE — lacunes identifiées sur: ${weak}. Concentre tes questions dessus en premier.` : !priorCompteRendu ? "Approfondis les concepts les plus importants." : ""}
 1 question à la fois, exemples concrets, français, 3-5 phrases max.`,
 
-  exo: (ue: string, diff: string, story: any | null) => `Concepteur sujets DCG ${ue}. UN sujet type annales niveau ${diff} en dossiers.
+  exo: (ue: string, diff: string, story: any | null, priorCompteRendu?: string | null) => `Concepteur sujets DCG ${ue}. UN sujet type annales niveau ${diff} en dossiers.
 ${story ? `IMPORTANT: le sujet se déroule dans la MÊME entreprise: ${story.entreprise}, avec ${story.personnage}. L'étudiant connaît ce contexte — fais évoluer la situation (nouveaux événements, nouvelles données chiffrées).` : ""}
+${priorCompteRendu ? `NOTE DE LA SESSION PRÉCÉDENTE SUR CE CHAPITRE : ${priorCompteRendu}\nFais porter au moins un dossier sur ces points faibles.` : ""}
 JSON pur:
 {"titre":"...","contexte":"Situation, données chiffrées...","dossiers":[{"numero":1,"titre":"...","points":0,"questions":[{"numero":1,"enonce":"...","points":0}]}],"total_points":20}
 IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
@@ -91,6 +94,14 @@ L'étudiant pose des questions sur ta correction. Réponds précisément, en fra
   recallCheck: (ue: string, notion: string, cle: string) => `Tuteur DCG ${ue}. L'étudiant répond à une question de rappel. La bonne réponse concerne : "${notion}" — ${cle}.
 ${KIND_TUTOR}
 En 1-2 phrases : relève le juste, complète si besoin. Français, concis.`,
+
+  compteRendu: (ue: string) => `Tuteur DCG ${ue}. Rédige un compte-rendu compact (4-6 phrases) de cette session d'étude, qui sera relu par toi-même — pas par l'étudiant — lors de la PROCHAINE session de révision sur ce chapitre, pour savoir quoi cibler.
+Base-toi UNIQUEMENT sur les données fournies, ne rien inventer. Couvre, dans cet ordre :
+1. Les notions précises où des difficultés ou confusions récurrentes sont apparues (sois spécifique — nomme les notions, pas de généralités comme "quelques lacunes").
+2. Les points visiblement solides, à ne pas re-tester inutilement.
+3. Une priorité claire pour la prochaine session.
+Ton factuel et clair, sans dramatiser ni minimiser — c'est une note technique de suivi, pas un message d'encouragement.
+Réponds uniquement avec le texte du compte-rendu, sans titre, sans markdown.`,
 };
 
 export const DIFFS = ["Fondamental", "Intermédiaire", "Annales"] as const;
