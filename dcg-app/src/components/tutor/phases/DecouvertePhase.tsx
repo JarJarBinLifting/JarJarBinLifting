@@ -9,6 +9,7 @@ type Sub = "context" | "feedback" | "reveal" | "reform_ack" | "confidence" | "re
 export function DecouvertePhase({
   story,
   ueCode,
+  model,
   adhd,
   onDone,
   onHint,
@@ -16,6 +17,7 @@ export function DecouvertePhase({
 }: {
   story: Story;
   ueCode: string;
+  model: string;
   adhd: boolean;
   onDone: (confidences: ConceptConfidence[]) => void;
   onHint: (hint: string) => void;
@@ -65,7 +67,7 @@ export function DecouvertePhase({
     setLoading(true);
     setSub("feedback");
     try {
-      const r = await genText(prompts.feedback(ueCode, actType, e.notion, e.explication), a, 600);
+      const r = await genText(prompts.feedback(ueCode, actType, e.notion, e.explication), a, 600, model);
       setFeedbackText(r);
       celebrate("💡");
     } catch {
@@ -83,6 +85,7 @@ export function DecouvertePhase({
         prompts.reformAck(ueCode),
         `Le concept est : "${e.notion}" — ${e.a_retenir}\n\nMa reformulation : ${reformText.trim()}`,
         300,
+        model,
       );
       setReformAck(r);
       celebrate("✍️");
@@ -97,7 +100,7 @@ export function DecouvertePhase({
     setLoading(true);
     const recallE = etapes[Math.max(0, step - RECALL_EVERY)];
     try {
-      const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300);
+      const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300, model);
       setRecallFb(r);
       celebrate("🔄");
     } catch {

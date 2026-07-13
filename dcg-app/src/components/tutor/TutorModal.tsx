@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { ConceptConfidence, Exercice, ExoCorrection, FlashcardRow, Qcm, QcmQuestion, Story, TutorSessionRow } from "../../lib/types";
+import { useAppState } from "../../state/AppState";
 import { avgConfidence, overconfidentTitles } from "./analysis";
 import { genJson } from "./llm";
 import { DIFFS, bumpDiff, prompts, type Diff } from "./prompts";
@@ -47,6 +48,7 @@ export function TutorModal({
   onClose: () => void;
   onCompleted: () => void;
 }) {
+  const { model } = useAppState();
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -226,7 +228,7 @@ export function TutorModal({
       } else {
         const content: unknown = cfg.fileContent ? [cfg.fileContent, { type: "text", text: cfg.text.trim() || "Analyse le document." }] : cfg.text;
         contentRef.current = content;
-        storyData = await genJson<Story>(prompts.story(ueCode), content, 8192);
+        storyData = await genJson<Story>(prompts.story(ueCode), content, 8192, model);
       }
       setStory(storyData);
       await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(storyData) });
@@ -235,7 +237,7 @@ export function TutorModal({
       if (existingFlashcards.length > 0) {
         setFlashcards(existingFlashcards);
       } else if (contentRef.current) {
-        genJson<{ cards: { recto: string; verso: string; theme: string; etape: number }[] }>(prompts.flash(ueCode, storyData), contentRef.current)
+        genJson<{ cards: { recto: string; verso: string; theme: string; etape: number }[] }>(prompts.flash(ueCode, storyData), contentRef.current, 4096, model)
           .then((f) => api.saveFlashcards(chapterId, session.id, f.cards.map((c) => ({ concept_id: String(c.etape ?? ""), question: c.recto, answer: c.verso }))))
           .then(setFlashcards)
           .catch((e) => setError("Flashcards : " + (e?.message ?? e)));
@@ -293,7 +295,7 @@ export function TutorModal({
     );
 
     try {
-      const q = await genJson<Qcm>(prompts.qcm(ueCode, nextDiff, story), contentRef.current ?? (story ? storyDigest(story) : ""));
+      const q = await genJson<Qcm>(prompts.qcm(ueCode, nextDiff, story), contentRef.current ?? (story ? storyDigest(story) : ""), 4096, model);
       setQcm(q);
       setTransitionSpec((t) => (t ? { ...t, loading: false } : t));
     } catch (e: any) {
@@ -496,7 +498,7 @@ export function TutorModal({
             )}
 
             {phase === "decouverte" && story && (
-              <DecouvertePhase story={story} ueCode={ueCode} adhd={adhd} onDone={onDecouverteDone} onHint={setProgressHint} celebrate={celebrate} />
+              <DecouvertePhase story={story} ueCode={ueCode} model={model} adhd={adhd} onDone={onDecouverteDone} onHint={setProgressHint} celebrate={celebrate} />
             )}
 
             {phase === "flashcards" && (
@@ -508,13 +510,14 @@ export function TutorModal({
             )}
 
             {phase === "socratique" && (
-              <SocratPhase sys={socSys} weakLabel={weakLabel} adhd={adhd} onNext={onSocDone} onHint={setProgressHint} onTranscript={setSocratiqueTranscript} />
+              <SocratPhase sys={socSys} weakLabel={weakLabel} model={model} adhd={adhd} onNext={onSocDone} onHint={setProgressHint} onTranscript={setSocratiqueTranscript} />
             )}
 
             {phase === "exercice" && (
               <ExoPhase
                 sys={exoSys}
                 ue={ueCode}
+                model={model}
                 adhd={adhd}
                 onHint={setProgressHint}
                 celebrate={celebrate}

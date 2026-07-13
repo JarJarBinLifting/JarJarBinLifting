@@ -12,6 +12,7 @@ interface ChatMsg {
 export function ExoPhase({
   sys,
   ue,
+  model,
   adhd,
   onNext,
   onHint,
@@ -20,6 +21,7 @@ export function ExoPhase({
 }: {
   sys: string;
   ue: string;
+  model: string;
   adhd: boolean;
   onNext: (got: number, total: number) => void;
   onHint: (hint: string) => void;
@@ -47,7 +49,7 @@ export function ExoPhase({
   useEffect(() => {
     (async () => {
       try {
-        const data = await genJson<Exercice>(sys, "Génère l'exercice.", 6000);
+        const data = await genJson<Exercice>(sys, "Génère l'exercice.", 6000, model);
         setEx(data);
       } catch (e: any) {
         setEx({ error: e?.message ?? String(e) } as any);
@@ -74,7 +76,7 @@ export function ExoPhase({
       .map((d) => d.questions.map((q) => `Dossier ${d.numero} Q${q.numero}: ${ans[`${d.numero}-${q.numero}`] || "(non répondu)"}`).join("\n"))
       .join("\n");
     try {
-      const c = await genJson<ExoCorrection>(prompts.corrJSON(ue, exText), `Ma copie:\n${student}`, 6000);
+      const c = await genJson<ExoCorrection>(prompts.corrJSON(ue, exText), `Ma copie:\n${student}`, 6000, model);
       setCorrection(c);
       onExercice(ex, c);
       celebrate("📝");
@@ -91,14 +93,14 @@ export function ExoPhase({
       setFu("");
       setLdChat(true);
       try {
-        const r = await genChat(prompts.corrChat(ue, exText), n, 1500);
+        const r = await genChat(prompts.corrChat(ue, exText), n, 1500, model);
         setChatMsgs((p) => [...p, { role: "assistant", content: r }]);
       } catch (e: any) {
         setChatMsgs((p) => [...p, { role: "assistant", content: `Erreur: ${e?.message ?? e}` }]);
       }
       setLdChat(false);
     },
-    [ue, exText],
+    [ue, exText, model],
   );
 
   if (ldEx) return <div className="tutor-card"><TutorSpin text="Préparation du sujet — même entreprise que l'histoire…" /></div>;

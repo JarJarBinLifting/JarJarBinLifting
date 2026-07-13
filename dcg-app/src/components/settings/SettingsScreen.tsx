@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../../lib/api";
+import { MODEL_OPTIONS } from "../../lib/models";
 import type { ApiKeyStatus, LocalConfig } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
 
@@ -177,8 +178,58 @@ export function SettingsScreen({
         </div>
       </section>
 
+      {!onboarding && <ModelSection />}
       {!onboarding && <ExamDateSection />}
     </div>
+  );
+}
+
+function ModelSection() {
+  const { model, setModel } = useAppState();
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🤖 Modèle du tuteur</div>
+      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+        Une session complète déclenche une dizaine d'appels au modèle (histoire, feedback, flashcards, QCM, dialogue,
+        correction…) — le choix du modèle a un vrai impact sur le coût et la vitesse d'une session, pas seulement par appel.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {MODEL_OPTIONS.map((m) => (
+          <label
+            key={m.id}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: `1.5px solid ${model === m.id ? "var(--accent-blue)" : "var(--border)"}`,
+              background: model === m.id ? "color-mix(in srgb, var(--accent-blue) 10%, var(--card))" : "transparent",
+              cursor: saving ? "default" : "pointer",
+            }}
+          >
+            <input
+              type="radio"
+              name="model"
+              checked={model === m.id}
+              disabled={saving}
+              onChange={async () => {
+                setSaving(true);
+                await setModel(m.id);
+                setSaving(false);
+              }}
+              style={{ marginTop: 3 }}
+            />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{m.label}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{m.note}</div>
+            </div>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
