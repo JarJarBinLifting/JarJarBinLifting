@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+
+:root[data-theme="dark"] {
+  --bg: #060d1c;
+  --card: #0c1422;
+  --card2: #101928;
+  --border: #172035;
+  --text: #d2e0f0;
+  --muted: #435878;
+  --input: #060d1c;
+  --input-border: #172035;
+  --track: #182035;
+}
+
+:root[data-theme="light"] {
+  --bg: #ebf0ff;
+  --card: #ffffff;
+  --card2: #f4f7ff;
+  --border: #d8e2ff;
+  --text: #18264a;
+  --muted: #7a90be;
+  --input: #fafbff;
+  --input-border: #c0d0f0;
+  --track: #dde8ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #060d1c;
+    --card: #0c1422;
+    --card2: #101928;
+    --border: #172035;
+    --text: #d2e0f0;
+    --muted: #435878;
+    --input: #060d1c;
+    --input-border: #172035;
+    --track: #182035;
+  }
+}
+
+:root {
+  --accent-blue: #5b9cf7;
+  --accent-purple: #b57bf7;
+  --accent-red: #f87171;
+  --accent-green: #34d399;
+  --accent-yellow: #fbbf24;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #f472b6;
+
+  --font-display: "Syne", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+  --font-mono: "DM Mono", monospace;
+  --font-story: "Libre Baskerville", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3a55;
+  border-radius: 2px;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes burst {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -70px) scale(1.5);
+  }
+}
+
+.blk {
+  animation: blink 1.3s ease infinite;
+}
+.pfill {
+  transition: width 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.hcard {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+.hcard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+.fade {
+  animation: fadeUp 0.3s ease both;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: var(--font-body);
+  outline: none;
+}
+textarea {
+  resize: vertical;
+}
+button {
+  cursor: pointer;
+}

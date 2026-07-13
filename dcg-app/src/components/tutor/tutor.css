@@ -1,0 +1,428 @@
+.tutor-modal {
+  --t-pri: var(--accent-blue);
+  --t-prl: color-mix(in srgb, var(--accent-blue) 14%, var(--card));
+  --t-acc: var(--accent-yellow);
+  --t-acl: color-mix(in srgb, var(--accent-yellow) 16%, var(--card));
+  --t-ok: var(--accent-green);
+  --t-okb: color-mix(in srgb, var(--accent-green) 12%, var(--card));
+  --t-err: var(--accent-red);
+  --t-erb: color-mix(in srgb, var(--accent-red) 12%, var(--card));
+
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--bg);
+  overflow-y: auto;
+  font-family: var(--font-body);
+  color: var(--text);
+}
+
+.tutor-body {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 16px 12px 90px;
+}
+
+.tutor-card {
+  background: var(--card);
+  padding: 18px;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border);
+  animation: fadeUp 0.35s ease both;
+}
+
+.tutor-bp {
+  padding: 11px 22px;
+  background: var(--t-pri);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.tutor-bp:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.tutor-bp:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tutor-bo {
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--t-pri);
+  border: 1.5px solid var(--t-pri);
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tutor-bs {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+.tutor-bs:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tutor-tf {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  font-size: 13px;
+  font-family: var(--font-body);
+  resize: vertical;
+  line-height: 1.6;
+  outline: none;
+  color: var(--text);
+  background: var(--input);
+}
+.tutor-tf:focus {
+  border-color: var(--t-pri);
+}
+
+.tutor-cb {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  animation: fadeUp 0.25s ease both;
+}
+.tutor-cb-u {
+  align-self: flex-end;
+  background: var(--t-pri);
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+.tutor-cb-a {
+  align-self: flex-start;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 3px;
+}
+
+.tutor-fc {
+  width: 100%;
+  max-width: 440px;
+  min-height: 180px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s ease;
+}
+.tutor-fc:hover {
+  transform: translateY(-2px);
+}
+.tutor-fc-f {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+}
+.tutor-fc-b {
+  background: var(--t-prl);
+  border: 1.5px solid var(--t-pri);
+}
+
+.tutor-prg-track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.tutor-prg-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  border: 2px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+}
+.tutor-prg-dot.done {
+  background: var(--t-ok);
+  border-color: var(--t-ok);
+  color: #fff;
+}
+.tutor-prg-dot.active {
+  background: var(--t-pri);
+  border-color: var(--t-pri);
+  color: #fff;
+  transform: scale(1.1);
+}
+.tutor-prg-line {
+  width: 16px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+.tutor-prg-line.done {
+  background: var(--t-ok);
+}
+
+.tutor-story-ctx {
+  font-family: var(--font-story);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 16px 18px;
+  background: var(--t-prl);
+  border-radius: 10px;
+  border-left: 4px solid var(--t-acc);
+  margin-bottom: 14px;
+}
+
+.tutor-think-box {
+  background: var(--t-prl);
+  border: 2px dashed var(--t-pri);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.tutor-think-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t-pri);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 8px;
+}
+
+.tutor-feedback-box {
+  padding: 14px 16px;
+  border-radius: 10px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.65;
+  animation: fadeUp 0.3s ease;
+}
+.tutor-fb-good {
+  background: var(--t-okb);
+  border-left: 3px solid var(--t-ok);
+}
+.tutor-fb-partial {
+  background: var(--t-acl);
+  border-left: 3px solid var(--t-acc);
+}
+
+.tutor-reveal-box {
+  background: var(--t-prl);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 12px 0;
+  border-left: 3px solid var(--t-pri);
+}
+.tutor-key-box {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t-acc);
+  padding: 10px 14px;
+  background: var(--t-acl);
+  border-radius: 6px;
+  text-align: center;
+  margin: 12px 0;
+}
+
+.tutor-conf-bar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.tutor-conf-btn {
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+.tutor-conf-btn.sel {
+  border-color: var(--t-pri);
+  background: var(--t-pri);
+  color: #fff;
+}
+
+.tutor-recall-box {
+  background: var(--t-okb);
+  border: 2px solid var(--t-ok);
+  border-radius: 10px;
+  padding: 18px;
+  margin: 14px 0;
+  text-align: center;
+}
+
+.tutor-trans-box {
+  text-align: center;
+  padding: 28px 18px;
+}
+.tutor-trans-recap {
+  background: var(--card2);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 14px 0;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+}
+
+.tutor-corr-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+.tutor-corr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  cursor: pointer;
+  gap: 8px;
+}
+.tutor-corr-body {
+  padding: 0 14px 14px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.tutor-consigne {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 5px 12px;
+  margin: 0 auto 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.tutor-hyp-btn {
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.5;
+  width: 100%;
+  color: var(--text);
+}
+.tutor-hyp-btn:hover:not(:disabled) {
+  border-color: var(--t-pri);
+  background: var(--t-prl);
+}
+.tutor-hyp-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tutor-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--track);
+  border-radius: 100px;
+  padding: 3px;
+  width: fit-content;
+  margin: 0 0 10px;
+}
+.tutor-mode-toggle button {
+  padding: 5px 12px;
+  border-radius: 100px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+.tutor-mode-toggle button.on {
+  background: var(--card);
+  color: var(--t-pri);
+}
+
+.tutor-pause-fab {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 450;
+  padding: 10px 16px;
+  border-radius: 100px;
+  border: 1.5px solid var(--t-pri);
+  background: var(--card);
+  color: var(--t-pri);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.tutor-close-fab {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 450;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.tutor-adhd-card {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.tutor-adhd-card.on {
+  border-color: var(--t-pri);
+  background: var(--t-prl);
+}
+
+.tutor-nofx .tutor-think-box,
+.tutor-nofx .tutor-cb,
+.tutor-nofx .tutor-card,
+.tutor-nofx .tutor-feedback-box {
+  animation: none;
+}

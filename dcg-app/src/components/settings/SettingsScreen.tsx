@@ -1,0 +1,210 @@
+import { useEffect, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import * as api from "../../lib/api";
+import type { ApiKeyStatus, LocalConfig } from "../../lib/types";
+import { useAppState } from "../../state/AppState";
+
+const STORAGE_LABEL: Record<ApiKeyStatus["storage"], string> = {
+  keychain: "🔒 trousseau du système (recommandé)",
+  plaintext_fallback: "⚠️ fichier local non chiffré (aucun trousseau système détecté)",
+  none: "aucune clé enregistrée",
+};
+
+export function SettingsScreen({
+  onboarding = false,
+  onDbReady,
+}: {
+  onboarding?: boolean;
+  onDbReady?: () => void;
+}) {
+  const [config, setConfig] = useState<LocalConfig | null>(null);
+  const [keyStatus, setKeyStatus] = useState<ApiKeyStatus | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [testing, setTesting] = useState<"idle" | "ok" | "fail" | "running">("idle");
+  const [dbBusy, setDbBusy] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  const refresh = () => {
+    api.getLocalConfig().then(setConfig);
+    api.getApiKeyStatus().then(setKeyStatus);
+  };
+
+  useEffect(refresh, []);
+
+  // In onboarding mode we don't have an AppStateProvider mounted yet, so the
+  // exam-date field (which depends on it) is skipped there entirely.
+  return (
+    <div style={{ padding: onboarding ? "40px 16px" : 14, maxWidth: 640, margin: "0 auto" }}>
+      {onboarding && (
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>📚</div>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, color: "var(--text)" }}>Bienvenue dans DCG Étude</h1>
+          <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
+            Avant de commencer, choisis où stocker tes données d'étude.
+          </p>
+        </div>
+      )}
+
+      {!onboarding && (
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>⚙️ Réglages</div>
+      )}
+
+      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>💾 Emplacement de la base de données</div>
+        <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+          Choisis un dossier que tu synchronises déjà entre tes machines (iCloud Drive, Dropbox, OneDrive…). Sur ta
+          deuxième machine, choisis le même fichier <code>dcg.sqlite3</code> existant plutôt que d'en créer un nouveau.
+        </p>
+        {config?.db_path ? (
+          <div style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text)", background: "var(--card2)", padding: "8px 10px", borderRadius: 8, marginBottom: 10, wordBreak: "break-all" }}>
+            {config.db_path}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--accent-yellow)", marginBottom: 10 }}>Aucun emplacement configuré.</div>
+        )}
+        {dbError && <div style={{ fontSize: 12, color: "var(--accent-red)", marginBottom: 10 }}>{dbError}</div>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            disabled={dbBusy}
+            onClick={async () => {
+              setDbError(null);
+              const folder = await openDialog({ directory: true, multiple: false, title: "Choisir le dossier synchronisé" });
+              if (!folder || typeof folder !== "string") return;
+              setDbBusy(true);
+              try {
+                const path = `${folder}/dcg.sqlite3`;
+                await api.setDbPath(path);
+                await api.seedDefaultCurriculum();
+                refresh();
+                onDbReady?.();
+              } catch (e) {
+                setDbError(String(e));
+              } finally {
+                setDbBusy(false);
+              }
+            }}
+            style={{ flex: 1, minWidth: 180, padding: "11px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+          >
+            📁 Créer / utiliser dcg.sqlite3 dans un dossier
+          </button>
+          <button
+            disabled={dbBusy}
+            onClick={async () => {
+              setDbError(null);
+              const file = await openDialog({ multiple: false, title: "Choisir un fichier dcg.sqlite3 existant", filters: [{ name: "SQLite", extensions: ["sqlite3", "db"] }] });
+              if (!file || typeof file !== "string") return;
+              setDbBusy(true);
+              try {
+                await api.setDbPath(file);
+                await api.seedDefaultCurriculum();
+                refresh();
+                onDbReady?.();
+              } catch (e) {
+                setDbError(String(e));
+              } finally {
+                setDbBusy(false);
+              }
+            }}
+            style={{ flex: 1, minWidth: 180, padding: "11px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
+          >
+            📄 Ouvrir un fichier existant (2ᵉ machine)
+          </button>
+        </div>
+      </section>
+
+      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🔑 Clé API Anthropic</div>
+        <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+          Le tuteur IA a besoin d'une clé API Anthropic (console.anthropic.com), facturée à l'usage — ce n'est pas ton
+          abonnement claude.ai, qui ne peut pas être connecté à une application tierce. La clé reste sur cette machine
+          et n'est jamais placée dans le dossier synchronisé.
+        </p>
+        {keyStatus && (
+          <div style={{ fontSize: 12, color: keyStatus.has_key ? "var(--accent-green)" : "var(--muted)", marginBottom: 10 }}>
+            {keyStatus.has_key ? `✓ Clé enregistrée — ${STORAGE_LABEL[keyStatus.storage]}` : "Aucune clé enregistrée."}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder="sk-ant-…"
+            style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 13 }}
+          />
+          <button
+            disabled={!keyInput.trim()}
+            onClick={async () => {
+              const status = await api.saveApiKey(keyInput.trim());
+              setKeyStatus(status);
+              setKeyInput("");
+              setTesting("idle");
+            }}
+            style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+          >
+            Enregistrer
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            disabled={!keyStatus?.has_key || testing === "running"}
+            onClick={async () => {
+              setTesting("running");
+              try {
+                await api.testAnthropicConnection();
+                setTesting("ok");
+              } catch {
+                setTesting("fail");
+              }
+            }}
+            style={{ padding: "8px 14px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 12, color: "var(--text)" }}
+          >
+            {testing === "running" ? "Test en cours…" : "Tester la connexion"}
+          </button>
+          {testing === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Connexion OK</span>}
+          {testing === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec — vérifie la clé</span>}
+          {keyStatus?.has_key && (
+            <button
+              onClick={async () => {
+                await api.clearApiKey();
+                refresh();
+              }}
+              style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--accent-red)", fontSize: 12 }}
+            >
+              Supprimer la clé
+            </button>
+          )}
+        </div>
+      </section>
+
+      {!onboarding && <ExamDateSection />}
+    </div>
+  );
+}
+
+function ExamDateSection() {
+  const { examDate, setExamDate } = useAppState();
+  const [draft, setDraft] = useState(examDate ?? "");
+
+  return (
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>⏳ Date d'examen</div>
+      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>Affiche un compte à rebours sur le tableau de bord.</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          type="date"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
+        />
+        <button
+          disabled={!draft}
+          onClick={() => setExamDate(draft)}
+          style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+        >
+          Enregistrer
+        </button>
+      </div>
+    </section>
+  );
+}
