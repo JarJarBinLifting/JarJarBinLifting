@@ -172,3 +172,19 @@ pub fn clear_api_key(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Manual on-demand export, distinct from the automatic pre-migration
+/// `.bak`. Uses SQLite's online backup API (via the existing open connection)
+/// rather than a raw file copy, so it's safe to run whenever — no risk of
+/// grabbing a half-written file mid-transaction.
+#[tauri::command]
+pub fn export_database(db: State<DbState>, destination: String) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("Aucune base de données ouverte")?;
+
+    let mut dst = rusqlite::Connection::open(&destination).map_err(|e| e.to_string())?;
+    let backup = rusqlite::backup::Backup::new(conn, &mut dst).map_err(|e| e.to_string())?;
+    backup
+        .run_to_completion(5, std::time::Duration::from_millis(100), None)
+        .map_err(|e| e.to_string())
+}

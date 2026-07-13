@@ -61,6 +61,9 @@ pub struct TutorSessionRow {
     pub bilan_json: Option<String>,
     pub adhd_mode_used: bool,
     pub difficulty: String,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
     pub started_at: String,
     pub completed_at: Option<String>,
 }
@@ -98,4 +101,12 @@ pub struct CompleteTutorSessionResult {
     pub box_level: i64,
     pub outcome: String,
     pub next_review_date: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ModelUsageRow {
+    pub model: String,
+    pub session_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
 }

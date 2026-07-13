@@ -38,6 +38,7 @@ pub fn run() {
             commands::settings::save_api_key,
             commands::settings::get_api_key_status,
             commands::settings::clear_api_key,
+            commands::settings::export_database,
             commands::anthropic::call_anthropic,
             commands::anthropic::test_anthropic_connection,
             commands::planner::seed_default_curriculum,
@@ -65,6 +66,7 @@ pub fn run() {
             commands::tutor::update_flashcard_progress,
             commands::tutor::complete_tutor_session,
             commands::tutor::list_due_chapters,
+            commands::tutor::get_usage_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

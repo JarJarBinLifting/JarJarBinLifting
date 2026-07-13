@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { ConceptConfidence, Exercice, ExoCorrection, FlashcardRow, Qcm, QcmQuestion, Story, TutorSessionRow } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
+import { formatTokens } from "../../lib/format";
 import { avgConfidence, overconfidentTitles } from "./analysis";
-import { genJson } from "./llm";
+import { genJson, setUsageListener } from "./llm";
 import { DIFFS, bumpDiff, prompts, type Diff } from "./prompts";
 import "./tutor.css";
 
@@ -76,9 +77,26 @@ export function TutorModal({
   const [schedule, setSchedule] = useState<ScheduleResult | null>(null);
   const [transitionSpec, setTransitionSpec] = useState<TransitionSpec | null>(null);
   const [transitionNext, setTransitionNext] = useState<Phase | null>(null);
+  const [usage, setUsage] = useState({ inputTokens: 0, outputTokens: 0 });
 
   const contentRef = useRef<unknown>(null); // fresh upload content, only set on a non-reused start
   const exerciceRef = useRef<{ exercice: Exercice; correction: ExoCorrection | null } | null>(null);
+  const usageRef = useRef({ inputTokens: 0, outputTokens: 0 }); // synchronous mirror of `usage`, for reading the latest total inside async save calls
+
+  // One listener per open tutor session — every genText/genJson/genChat call
+  // anywhere in the tutor flow reports here (see llm.ts), so the running
+  // total is accurate without each phase component needing to know usage
+  // tracking exists.
+  useEffect(() => {
+    setUsageListener((delta) => {
+      usageRef.current = {
+        inputTokens: usageRef.current.inputTokens + delta.inputTokens,
+        outputTokens: usageRef.current.outputTokens + delta.outputTokens,
+      };
+      setUsage(usageRef.current);
+    });
+    return () => setUsageListener(null);
+  }, []);
 
   const celebrate = (emoji: string) => {
     setStreak((s) => s + 1);
@@ -135,6 +153,8 @@ export function TutorModal({
       setAdhd(session.adhd_mode_used);
       const sessionDiff = (DIFFS as readonly string[]).includes(session.difficulty) ? (session.difficulty as Diff) : DIFFS[0];
       setDiff(sessionDiff);
+      usageRef.current = { inputTokens: session.input_tokens, outputTokens: session.output_tokens };
+      setUsage(usageRef.current);
 
       const storyData: Story | null = session.story_json ? JSON.parse(session.story_json) : null;
       if (!storyData) {
@@ -218,7 +238,7 @@ export function TutorModal({
     const sourceType: "paste" | "pdf" | "image" | null = cfg.fileContent ? cfg.fileContent.type === "document" ? "pdf" : "image" : cfg.text ? "paste" : null;
 
     try {
-      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff);
+      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff, model);
       setTutorSessionId(session.id);
 
       let storyData: Story;
@@ -251,7 +271,11 @@ export function TutorModal({
   const onDecouverteDone = async (confs: ConceptConfidence[]) => {
     setConfidences(confs);
     if (tutorSessionId) {
-      await api.saveTutorSessionProgress(tutorSessionId, { confidence_json: JSON.stringify(confs) });
+      await api.saveTutorSessionProgress(tutorSessionId, {
+        confidence_json: JSON.stringify(confs),
+        input_tokens: usageRef.current.inputTokens,
+        output_tokens: usageRef.current.outputTokens,
+      });
     }
     const weak = confs.filter((c) => c.val === 1).length;
     const mid = confs.filter((c) => c.val === 2).length;
@@ -312,6 +336,8 @@ export function TutorModal({
         qcm_results_json: JSON.stringify(missed),
         qcm_score: score,
         qcm_total: total,
+        input_tokens: usageRef.current.inputTokens,
+        output_tokens: usageRef.current.outputTokens,
       });
     }
     const weakConcepts = confidences.filter((c) => c.val === 1).map((c) => c.titre);
@@ -344,7 +370,11 @@ export function TutorModal({
 
   const onSocDone = async () => {
     if (tutorSessionId) {
-      await api.saveTutorSessionProgress(tutorSessionId, { socratique_transcript_json: JSON.stringify(socratiqueTranscript) });
+      await api.saveTutorSessionProgress(tutorSessionId, {
+        socratique_transcript_json: JSON.stringify(socratiqueTranscript),
+        input_tokens: usageRef.current.inputTokens,
+        output_tokens: usageRef.current.outputTokens,
+      });
     }
     goToTransition(
       {
@@ -363,7 +393,11 @@ export function TutorModal({
   const onExoDone = async (got: number, total: number) => {
     setExoResult({ got, total });
     if (tutorSessionId && exerciceRef.current) {
-      await api.saveTutorSessionProgress(tutorSessionId, { exercice_json: JSON.stringify(exerciceRef.current) });
+      await api.saveTutorSessionProgress(tutorSessionId, {
+        exercice_json: JSON.stringify(exerciceRef.current),
+        input_tokens: usageRef.current.inputTokens,
+        output_tokens: usageRef.current.outputTokens,
+      });
     }
     setPhase("bilan");
 
@@ -428,6 +462,11 @@ export function TutorModal({
           <div style={{ textAlign: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{progressHint}</span>
             {streak >= 2 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "var(--t-acc)" }}>🔥 {streak}</span>}
+            {usage.inputTokens + usage.outputTokens > 0 && (
+              <span style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }} title="Jetons utilisés dans cette session">
+                🔢 {formatTokens(usage.inputTokens + usage.outputTokens)}
+              </span>
+            )}
           </div>
         )}
 

@@ -18,6 +18,8 @@ pub struct AnthropicMessage {
 #[derive(Debug, Serialize)]
 pub struct AnthropicResult {
     pub text: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
 }
 
 /// The only place in the whole app that talks to api.anthropic.com. The key
@@ -80,7 +82,22 @@ pub async fn call_anthropic(
         })
         .unwrap_or_default();
 
-    Ok(AnthropicResult { text })
+    let input_tokens = payload
+        .get("usage")
+        .and_then(|u| u.get("input_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let output_tokens = payload
+        .get("usage")
+        .and_then(|u| u.get("output_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    Ok(AnthropicResult {
+        text,
+        input_tokens,
+        output_tokens,
+    })
 }
 
 /// Used by the Settings screen's "test connection" button.

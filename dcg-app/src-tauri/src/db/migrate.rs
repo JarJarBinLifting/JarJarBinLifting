@@ -10,6 +10,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "tutor session difficulty",
         include_str!("../../migrations/0002_tutor_session_difficulty.sql"),
     ),
+    (
+        3,
+        "usage tracking",
+        include_str!("../../migrations/0003_usage_tracking.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;

@@ -60,8 +60,18 @@ export interface TutorSessionRow {
   bilan_json: string | null;
   adhd_mode_used: boolean;
   difficulty: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
   started_at: string;
   completed_at: string | null;
+}
+
+export interface ModelUsageRow {
+  model: string;
+  session_count: number;
+  input_tokens: number;
+  output_tokens: number;
 }
 
 export interface FlashcardRow {

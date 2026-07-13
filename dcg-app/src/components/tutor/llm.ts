@@ -53,11 +53,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface UsageDelta {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+// Fire-and-observe rather than threading a callback through every genText/
+// genJson/genChat call site: TutorModal registers one listener per tutor
+// session to accumulate a running token total, without every phase component
+// needing to know usage tracking exists.
+let usageListener: ((delta: UsageDelta) => void) | null = null;
+export function setUsageListener(fn: ((delta: UsageDelta) => void) | null): void {
+  usageListener = fn;
+}
+
 /** The one place every LLM call in the tutor funnels through — so network
  * resilience (exponential backoff with jitter, on transient failures only)
  * is consistent across story/flashcard/QCM generation, feedback calls, and
  * chat turns, instead of only the JSON-parsing retry a couple of these calls
- * used to have. */
+ * used to have. Also the one place usage is reported, so every call site
+ * contributes to the running token total for free. */
 async function callWithRetry(
   system: string,
   messages: AnthropicMessageInput[],
@@ -69,6 +84,7 @@ async function callWithRetry(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const r = await api.callAnthropic(system, messages, maxTokens, model);
+      usageListener?.({ inputTokens: r.input_tokens, outputTokens: r.output_tokens });
       return r.text;
     } catch (e) {
       lastErr = e;

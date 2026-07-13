@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../../lib/api";
 import { MODEL_OPTIONS } from "../../lib/models";
-import type { ApiKeyStatus, LocalConfig } from "../../lib/types";
+import { formatTokens, todayIso } from "../../lib/format";
+import type { ApiKeyStatus, LocalConfig, ModelUsageRow } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
 
 const STORAGE_LABEL: Record<ApiKeyStatus["storage"], string> = {
@@ -113,6 +114,8 @@ export function SettingsScreen({
         </div>
       </section>
 
+      {!onboarding && config?.db_path && <ExportSection />}
+
       <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🔑 Clé API Anthropic</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
@@ -179,8 +182,97 @@ export function SettingsScreen({
       </section>
 
       {!onboarding && <ModelSection />}
+      {!onboarding && <UsageSection />}
       {!onboarding && <ExamDateSection />}
     </div>
+  );
+}
+
+function ExportSection() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<"idle" | "ok" | "fail">("idle");
+  const [errMsg, setErrMsg] = useState("");
+
+  return (
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🗄️ Sauvegarde manuelle</div>
+      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+        En plus de la sauvegarde automatique créée avant chaque mise à jour, tu peux exporter une copie complète de tes
+        données à tout moment — pratique avant une manipulation risquée, ou juste pour dormir tranquille.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setResult("idle");
+            const destination = await saveDialog({
+              title: "Enregistrer la sauvegarde",
+              defaultPath: `dcg-sauvegarde-${todayIso()}.sqlite3`,
+              filters: [{ name: "SQLite", extensions: ["sqlite3"] }],
+            });
+            if (!destination) return;
+            setBusy(true);
+            try {
+              await api.exportDatabase(destination);
+              setResult("ok");
+            } catch (e) {
+              setErrMsg(String(e));
+              setResult("fail");
+            } finally {
+              setBusy(false);
+            }
+          }}
+          style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
+        >
+          {busy ? "Export en cours…" : "Exporter une copie…"}
+        </button>
+        {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Sauvegarde enregistrée</span>}
+        {result === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec : {errMsg}</span>}
+      </div>
+    </section>
+  );
+}
+
+const MODEL_LABEL: Record<string, string> = Object.fromEntries(MODEL_OPTIONS.map((m) => [m.id, m.label]));
+
+function UsageSection() {
+  const [rows, setRows] = useState<ModelUsageRow[] | null>(null);
+
+  useEffect(() => {
+    api.getUsageSummary().then(setRows);
+  }, []);
+
+  const total = (rows ?? []).reduce((s, r) => s + r.input_tokens + r.output_tokens, 0);
+
+  return (
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>📊 Utilisation</div>
+      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
+        Jetons consommés par le tuteur, cumulés depuis le début — directement depuis les réponses de l'API, donc exacts.
+        Pour convertir en coût réel, consulte les tarifs actuels sur console.anthropic.com/settings/pricing (ils changent
+        avec le temps, mieux vaut vérifier là-bas qu'ici).
+      </p>
+      {!rows ? (
+        <p style={{ fontSize: 12, color: "var(--muted)" }}>Chargement…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ fontSize: 12, color: "var(--muted)" }}>Aucune session terminée pour l'instant.</p>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+            {rows.map((r) => (
+              <div key={r.model} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--card2)", borderRadius: 8, fontSize: 12 }}>
+                <span style={{ flex: 1, fontWeight: 600, color: "var(--text)" }}>{MODEL_LABEL[r.model] ?? r.model}</span>
+                <span style={{ color: "var(--muted)" }}>{r.session_count} session{r.session_count > 1 ? "s" : ""}</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>
+                  ↓{formatTokens(r.input_tokens)} ↑{formatTokens(r.output_tokens)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>Total : {formatTokens(total)} jetons</div>
+        </>
+      )}
+    </section>
   );
 }
 

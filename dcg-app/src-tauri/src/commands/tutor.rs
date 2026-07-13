@@ -1,7 +1,7 @@
 use crate::commands::planner::{row_to_qcm, set_chapter_status};
 use crate::commands::scheduler::{self, SessionResult};
 use crate::db::{with_conn, DbState};
-use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, TutorSessionRow};
+use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, ModelUsageRow, TutorSessionRow};
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 use tauri::State;
@@ -24,14 +24,18 @@ fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow
         bilan_json: row.get(13)?,
         adhd_mode_used: row.get::<_, i64>(14)? != 0,
         difficulty: row.get(15)?,
-        started_at: row.get(16)?,
-        completed_at: row.get(17)?,
+        model: row.get(16)?,
+        input_tokens: row.get(17)?,
+        output_tokens: row.get(18)?,
+        started_at: row.get(19)?,
+        completed_at: row.get(20)?,
     })
 }
 
 const TUTOR_SESSION_COLUMNS: &str = "id, chapter_id, status, input_source_type, story_json, concepts_json,
     confidence_json, qcm_json, qcm_results_json, qcm_score, qcm_total,
-    socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, difficulty, started_at, completed_at";
+    socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, difficulty, model, input_tokens,
+    output_tokens, started_at, completed_at";
 
 fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessionRow> {
     conn.query_row(
@@ -46,8 +50,8 @@ fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessio
 /// existing in-progress session via `get_in_progress_session` (offering the
 /// user a Resume/Start-fresh choice, abandoning the old row on "fresh") — the
 /// lookup here is a safety net, not the primary resume mechanism. `difficulty`
-/// is only used when a new row is created; a reused row keeps whatever
-/// difficulty it was originally started with.
+/// and `model` are only used when a new row is created; a reused row keeps
+/// whatever it was originally started with.
 #[tauri::command]
 pub fn start_or_resume_tutor_session(
     db: State<DbState>,
@@ -55,6 +59,7 @@ pub fn start_or_resume_tutor_session(
     input_source_type: Option<String>,
     adhd_mode: bool,
     difficulty: String,
+    model: String,
 ) -> Result<TutorSessionRow, String> {
     with_conn(&db, |conn| {
         let existing: Option<i64> = conn
@@ -70,8 +75,9 @@ pub fn start_or_resume_tutor_session(
         }
 
         conn.execute(
-            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty) VALUES (?1, ?2, ?3, ?4)",
-            params![chapter_id, input_source_type, adhd_mode as i64, difficulty],
+            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![chapter_id, input_source_type, adhd_mode as i64, difficulty, model],
         )?;
         let id = conn.last_insert_rowid();
         get_tutor_session(conn, id)
@@ -135,6 +141,11 @@ pub struct TutorSessionPatch {
     pub socratique_transcript_json: Option<String>,
     pub exercice_json: Option<String>,
     pub bilan_json: Option<String>,
+    /// Latest *cumulative* token counts for the session so far (not deltas —
+    /// the frontend tracks the running total in memory and resends the whole
+    /// count each time), so this overwrites rather than accumulates in SQL.
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
 }
 
 #[tauri::command]
@@ -156,8 +167,10 @@ pub fn save_tutor_session_progress(
                 socratique_transcript_json = COALESCE(?8, socratique_transcript_json),
                 exercice_json = COALESCE(?9, exercice_json),
                 bilan_json = COALESCE(?10, bilan_json),
+                input_tokens = COALESCE(?11, input_tokens),
+                output_tokens = COALESCE(?12, output_tokens),
                 updated_at = datetime('now')
-             WHERE id = ?11",
+             WHERE id = ?13",
             params![
                 patch.story_json,
                 patch.concepts_json,
@@ -169,6 +182,8 @@ pub fn save_tutor_session_progress(
                 patch.socratique_transcript_json,
                 patch.exercice_json,
                 patch.bilan_json,
+                patch.input_tokens,
+                patch.output_tokens,
                 id,
             ],
         )?;
@@ -401,6 +416,34 @@ pub fn list_due_chapters(db: State<DbState>, within_days: i64) -> Result<Vec<Due
                 next_review_date: row.get(6)?,
                 last_reviewed_date: row.get(7)?,
                 last_outcome: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    })
+}
+
+/// Lifetime token usage grouped by model — the `model` column records which
+/// model each session actually used, so switching models in Settings doesn't
+/// corrupt historical totals. Token counts come straight from the Anthropic
+/// API's own `usage` field, so they're always accurate; converting to a
+/// dollar estimate is left to the UI, which can apply current published
+/// rates rather than this command guessing at pricing that changes over time.
+#[tauri::command]
+pub fn get_usage_summary(db: State<DbState>) -> Result<Vec<ModelUsageRow>, String> {
+    with_conn(&db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT model, COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0)
+             FROM tutor_sessions
+             WHERE input_tokens > 0 OR output_tokens > 0
+             GROUP BY model
+             ORDER BY SUM(input_tokens + output_tokens) DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ModelUsageRow {
+                model: row.get(0)?,
+                session_count: row.get(1)?,
+                input_tokens: row.get(2)?,
+                output_tokens: row.get(3)?,
             })
         })?;
         rows.collect()

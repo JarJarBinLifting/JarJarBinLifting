@@ -6,6 +6,7 @@ import type {
   DueChapter,
   FlashcardRow,
   LocalConfig,
+  ModelUsageRow,
   QcmScoreRow,
   SessionLogRow,
   TutorSessionRow,
@@ -21,6 +22,7 @@ export const reopenConfiguredDb = () => invoke<boolean>("reopen_configured_db");
 export const saveApiKey = (key: string) => invoke<ApiKeyStatus>("save_api_key", { key });
 export const getApiKeyStatus = () => invoke<ApiKeyStatus>("get_api_key_status");
 export const clearApiKey = () => invoke<void>("clear_api_key");
+export const exportDatabase = (destination: string) => invoke<void>("export_database", { destination });
 
 // ─── Anthropic ───
 
@@ -29,12 +31,18 @@ export interface AnthropicMessageInput {
   content: unknown; // string or Anthropic content-block array (documents/images)
 }
 
+export interface AnthropicCallResult {
+  text: string;
+  input_tokens: number;
+  output_tokens: number;
+}
+
 export const callAnthropic = (
   system: string,
   messages: AnthropicMessageInput[],
   maxTokens = 4096,
   model?: string,
-) => invoke<{ text: string }>("call_anthropic", { system, messages, maxTokens, model });
+) => invoke<AnthropicCallResult>("call_anthropic", { system, messages, maxTokens, model });
 
 export const testAnthropicConnection = () => invoke<boolean>("test_anthropic_connection");
 
@@ -89,12 +97,14 @@ export const startOrResumeTutorSession = (
   inputSourceType: "paste" | "pdf" | "image" | null,
   adhdMode: boolean,
   difficulty: string,
+  model: string,
 ) =>
   invoke<TutorSessionRow>("start_or_resume_tutor_session", {
     chapterId,
     inputSourceType,
     adhdMode,
     difficulty,
+    model,
   });
 
 export const getLatestCompletedSession = (chapterId: number) =>
@@ -114,6 +124,8 @@ export interface TutorSessionPatch {
   socratique_transcript_json?: string | null;
   exercice_json?: string | null;
   bilan_json?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
 }
 
 export const saveTutorSessionProgress = (id: number, patch: TutorSessionPatch) =>
@@ -143,3 +155,5 @@ export const completeTutorSession = (
 
 export const listDueChapters = (withinDays: number) =>
   invoke<DueChapter[]>("list_due_chapters", { withinDays });
+
+export const getUsageSummary = () => invoke<ModelUsageRow[]>("get_usage_summary");
