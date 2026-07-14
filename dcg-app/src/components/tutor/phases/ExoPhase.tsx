@@ -14,23 +14,38 @@ export function ExoPhase({
   ue,
   model,
   adhd,
+  initialExercice,
+  initialAnswers,
   onNext,
   onHint,
   celebrate,
   onExercice,
+  onDraftSave,
 }: {
   sys: string;
   ue: string;
   model: string;
   adhd: boolean;
+  /** The exact exercise a resumed draft's answers were written against —
+   * reused as-is instead of regenerating, since a fresh generation would
+   * have different dossier/question numbering and silently orphan the
+   * recovered answers. */
+  initialExercice?: Exercice;
+  /** Draft answers recovered from a resumed session — see onDraftSave. */
+  initialAnswers?: Record<string, string>;
   onNext: (got: number, total: number) => void;
   onHint: (hint: string) => void;
   celebrate: (emoji: string) => void;
   onExercice: (exercice: Exercice, correction: ExoCorrection | null) => void;
+  /** Fired ~1.5s after the student stops typing, so a crash or accidental
+   * close mid-answer doesn't lose typed work the way every other phase's
+   * incremental save already protects against — a cas-pratique answer is
+   * the most painful thing in the app to have to retype from scratch. */
+  onDraftSave?: (exercice: Exercice, answers: Record<string, string>) => void;
 }) {
   const [ex, setEx] = useState<(Exercice & { error?: string }) | null>(null);
   const [ldEx, setLdEx] = useState(true);
-  const [ans, setAns] = useState<Record<string, string>>({});
+  const [ans, setAns] = useState<Record<string, string>>(initialAnswers ?? {});
   const [correction, setCorrection] = useState<(ExoCorrection & { error?: string }) | null>(null);
   const [ldC, setLdC] = useState(false);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
@@ -47,6 +62,11 @@ export function ExoPhase({
   }, [chatMsgs]);
 
   useEffect(() => {
+    if (initialExercice) {
+      setEx(initialExercice);
+      setLdEx(false);
+      return;
+    }
     (async () => {
       try {
         const data = await genJson<Exercice>(sys, "Génère l'exercice.", 6000, model);
@@ -63,6 +83,14 @@ export function ExoPhase({
     if (ex && !ex.error) onHint(correction ? "Application — lecture de la correction" : adhd ? `Application — dossier ${dossIdx + 1}/${ex.dossiers?.length || 1}` : "Application — rédaction du cas pratique");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ex, correction, dossIdx, adhd]);
+
+  useEffect(() => {
+    if (!ex || ex.error || correction || !onDraftSave) return;
+    if (!Object.values(ans).some((a) => a?.trim())) return;
+    const id = setTimeout(() => onDraftSave(ex, ans), 1500);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ans]);
 
   const exText = ex && !ex.error
     ? `${ex.titre}\n${ex.contexte}\n` +

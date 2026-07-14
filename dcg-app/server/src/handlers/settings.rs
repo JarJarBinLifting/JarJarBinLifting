@@ -58,8 +58,23 @@ fn write_local_config(cfg: &LocalConfig) -> Result<(), String> {
     std::fs::write(path, s).map_err(|e| e.to_string())
 }
 
-pub async fn get_local_config() -> Json<LocalConfig> {
-    Json(read_local_config())
+/// What the frontend actually needs to know at startup: not just "is a path
+/// recorded" (`db_path`) but "is the connection actually open right now"
+/// (`db_open`) — those can disagree if the configured file went missing or
+/// got corrupted between runs, which is exactly the case the recovery screen
+/// exists for. Checking only `db_path` would show the normal UI over a dead
+/// DB, with every action failing "aucune base de données n'est ouverte" and
+/// no recovery screen ever appearing.
+#[derive(Debug, Serialize)]
+pub struct LocalConfigStatus {
+    pub db_path: Option<String>,
+    pub db_open: bool,
+}
+
+pub async fn get_local_config(State(state): State<AppState>) -> Json<LocalConfigStatus> {
+    let cfg = read_local_config();
+    let db_open = state.db.0.lock().map(|g| g.is_some()).unwrap_or(false);
+    Json(LocalConfigStatus { db_path: cfg.db_path, db_open })
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,12 +117,17 @@ pub fn reopen_configured_db(state: &AppState) -> Result<bool, String> {
 
 /// First-ever run: silently creates the database at the default per-app data
 /// location and remembers it, so there's no folder-picker step between
-/// installing the app and using it. Safe to call again later (e.g. as a
-/// recovery action if something went wrong) — it's a no-op once a path is
-/// already configured.
+/// installing the app and using it.
+///
+/// Also the recovery action behind the Settings "Réessayer" button: if a
+/// path was already configured — e.g. the file went missing or the
+/// connection failed on a previous attempt — this retries opening that same
+/// path rather than silently switching to a fresh, empty default DB, so a
+/// retry can't look like it worked while quietly abandoning the user's
+/// actual data.
 pub fn ensure_default_db(state: &AppState) -> Result<(), String> {
     if read_local_config().db_path.is_some() {
-        return Ok(());
+        return reopen_configured_db(state).map(|_| ());
     }
     let path = default_db_path()?;
     set_db_path_inner(state, path.to_string_lossy().into_owned())

@@ -128,6 +128,10 @@ export interface ApiKeyStatus {
 
 export interface LocalConfig {
   db_path: string | null;
+  /** Whether the database connection is actually open right now — distinct
+   * from db_path being recorded, since a configured file can go missing or
+   * fail to open between runs. */
+  db_open: boolean;
 }
 
 // ─── Tutor domain shapes (LLM-generated JSON, parsed from the *_json columns) ───

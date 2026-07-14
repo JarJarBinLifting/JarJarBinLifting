@@ -9,6 +9,10 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<DbState>,
+    /// Shared HTTP client for calls to api.anthropic.com — built once with a
+    /// timeout (see handlers::anthropic) so connection pooling actually works
+    /// across requests, instead of every call paying a fresh TLS handshake.
+    pub http: reqwest::Client,
 }
 
 /// Every handler in this app returns `Result<_, AppError>` — errors from

@@ -89,3 +89,40 @@ fn backup_before_migration(path: &Path) -> Result<(), DbError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A garbage (non-sqlite) file at the configured path must surface as an
+    /// `Err` from `open` — not panic and not silently produce a connection
+    /// that then fails on every later query.
+    #[test]
+    fn opening_a_corrupt_file_returns_an_error_not_a_panic() {
+        let dir = std::env::temp_dir().join(format!("dcg-test-corrupt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corrupt.sqlite3");
+        std::fs::write(&path, b"not a real sqlite database, just garbage bytes").unwrap();
+
+        let result = open(&path);
+        assert!(result.is_err());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A missing parent directory should be created rather than failing —
+    /// this is what makes first-run auto-provisioning work without asking
+    /// the user to pick/create a folder first.
+    #[test]
+    fn opening_a_path_with_a_missing_parent_dir_creates_it() {
+        let dir = std::env::temp_dir().join(format!("dcg-test-newdir-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let path = dir.join("nested").join("dcg.sqlite3");
+
+        let conn = open(&path).unwrap();
+        drop(conn);
+        assert!(path.exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

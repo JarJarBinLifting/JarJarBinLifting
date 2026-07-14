@@ -163,7 +163,7 @@ export function Dashboard({
         </button>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 16 }}>
         <StatTile label="Chapitres complétés" value={`${totalDone}/${chapters.length}`} color="var(--accent-green)" />
         <StatTile label="Sessions de travail" value={timerSessions.length} color="var(--accent-blue)" />
         <StatTile

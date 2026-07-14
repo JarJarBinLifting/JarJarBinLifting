@@ -1,5 +1,6 @@
-use crate::appstate::AppError;
+use crate::appstate::{AppError, AppState};
 use crate::handlers::settings::read_api_key;
+use axum::extract::State;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -40,11 +41,50 @@ pub struct CallAnthropicRequest {
     pub cache: Option<bool>,
 }
 
+/// Turns a successful (2xx) Anthropic response body into a result, or a clear
+/// French error for the two "technically succeeded but there's nothing
+/// usable" shapes: a safety refusal (`stop_reason: "refusal"`, `content`
+/// typically empty) and a response truncated by hitting `max_tokens` before
+/// finishing its JSON. Both used to fall through as an empty `text`, which
+/// the frontend's JSON-parse retry loop burned three attempts on before a
+/// generic "Échec après 3 tentatives" — this gives the real reason instead,
+/// on the first attempt.
+fn parse_response(payload: &Value) -> Result<AnthropicResult, String> {
+    let text = payload
+        .get("content")
+        .and_then(|c| c.as_array())
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default();
+
+    let input_tokens = payload.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let output_tokens = payload.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let stop_reason = payload.get("stop_reason").and_then(|v| v.as_str());
+
+    if text.trim().is_empty() && stop_reason == Some("refusal") {
+        return Err("Le modèle a refusé de répondre (classificateur de sécurité Anthropic) — reformule le contenu du chapitre ou réessaie.".to_string());
+    }
+    if text.trim().is_empty() && stop_reason.is_some() {
+        return Err(format!("Réponse vide du modèle (raison : {}).", stop_reason.unwrap_or("inconnue")));
+    }
+    if stop_reason == Some("max_tokens") {
+        tracing::warn!("Anthropic response hit max_tokens — likely truncated mid-generation");
+    }
+
+    Ok(AnthropicResult { text, input_tokens, output_tokens })
+}
+
 /// The only place in the whole app that talks to api.anthropic.com. The key
 /// is read Rust-side (see handlers::settings::read_api_key) and never crosses
 /// into an HTTP response — the frontend only ever calls this endpoint and
 /// gets text back.
 async fn call_anthropic_inner(
+    http: &reqwest::Client,
     system: String,
     messages: Vec<AnthropicMessage>,
     max_tokens: Option<u32>,
@@ -63,8 +103,7 @@ async fn call_anthropic_inner(
         body["cache_control"] = serde_json::json!({"type": "ephemeral"});
     }
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = http
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", key)
         .header("anthropic-version", ANTHROPIC_VERSION)
@@ -72,7 +111,13 @@ async fn call_anthropic_inner(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Échec de la requête vers Anthropic : {e}"))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "La requête vers Anthropic a expiré (délai de 3 minutes dépassé) — réessaie ; si ça persiste, vérifie ta connexion.".to_string()
+            } else {
+                format!("Échec de la requête vers Anthropic : {e}")
+            }
+        })?;
 
     let status = resp.status();
     let payload: Value = resp.json().await.map_err(|e| format!("Réponse Anthropic illisible : {e}"))?;
@@ -86,34 +131,20 @@ async fn call_anthropic_inner(
         return Err(msg.to_string());
     }
 
-    let text = payload
-        .get("content")
-        .and_then(|c| c.as_array())
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("")
-        })
-        .unwrap_or_default();
-
-    let input_tokens = payload.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
-    let output_tokens = payload.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
-
-    Ok(AnthropicResult { text, input_tokens, output_tokens })
+    parse_response(&payload)
 }
 
-pub async fn call_anthropic(Json(body): Json<CallAnthropicRequest>) -> Result<Json<AnthropicResult>, AppError> {
-    call_anthropic_inner(body.system, body.messages, body.max_tokens, body.model, body.cache.unwrap_or(false))
+pub async fn call_anthropic(State(state): State<AppState>, Json(body): Json<CallAnthropicRequest>) -> Result<Json<AnthropicResult>, AppError> {
+    call_anthropic_inner(&state.http, body.system, body.messages, body.max_tokens, body.model, body.cache.unwrap_or(false))
         .await
         .map(Json)
         .map_err(AppError)
 }
 
 /// Used by the Settings screen's "test connection" button.
-pub async fn test_anthropic_connection() -> Result<Json<bool>, AppError> {
+pub async fn test_anthropic_connection(State(state): State<AppState>) -> Result<Json<bool>, AppError> {
     call_anthropic_inner(
+        &state.http,
         "Réponds uniquement par OK.".into(),
         vec![AnthropicMessage {
             role: "user".into(),
@@ -126,4 +157,64 @@ pub async fn test_anthropic_connection() -> Result<Json<bool>, AppError> {
     .await
     .map(|_| Json(true))
     .map_err(AppError)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_text_and_usage_from_a_normal_response() {
+        let payload = serde_json::json!({
+            "content": [{"type": "text", "text": "hello "}, {"type": "text", "text": "world"}],
+            "usage": {"input_tokens": 10, "output_tokens": 2},
+            "stop_reason": "end_turn",
+        });
+        let r = parse_response(&payload).unwrap();
+        assert_eq!(r.text, "hello world");
+        assert_eq!(r.input_tokens, 10);
+        assert_eq!(r.output_tokens, 2);
+    }
+
+    #[test]
+    fn refusal_with_empty_content_is_a_clear_error_not_empty_text() {
+        let payload = serde_json::json!({
+            "content": [],
+            "usage": {"input_tokens": 5, "output_tokens": 0},
+            "stop_reason": "refusal",
+        });
+        let err = parse_response(&payload).unwrap_err();
+        assert!(err.contains("refusé"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn empty_content_with_no_recognizable_reason_still_errors_clearly() {
+        let payload = serde_json::json!({
+            "content": [],
+            "usage": {"input_tokens": 5, "output_tokens": 0},
+            "stop_reason": "end_turn",
+        });
+        let err = parse_response(&payload).unwrap_err();
+        assert!(err.contains("Réponse vide"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn missing_content_field_entirely_does_not_panic() {
+        let payload = serde_json::json!({ "usage": {"input_tokens": 1, "output_tokens": 0} });
+        // No stop_reason at all in this payload — falls through to Ok with empty text,
+        // same as today's behavior for a genuinely malformed/unexpected body shape.
+        let r = parse_response(&payload).unwrap();
+        assert_eq!(r.text, "");
+    }
+
+    #[test]
+    fn max_tokens_truncation_still_returns_the_partial_text() {
+        let payload = serde_json::json!({
+            "content": [{"type": "text", "text": "{\"partial\": tr"}],
+            "usage": {"input_tokens": 5, "output_tokens": 16000},
+            "stop_reason": "max_tokens",
+        });
+        let r = parse_response(&payload).unwrap();
+        assert_eq!(r.text, "{\"partial\": tr");
+    }
 }

@@ -106,6 +106,7 @@ export function TutorModal({
   const [qcmResult, setQcmResult] = useState<{ score: number; total: number; missed: QcmQuestion[] } | null>(null);
   const [socratiqueTranscript, setSocratiqueTranscript] = useState<{ role: string; content: string }[]>([]);
   const [exoResult, setExoResult] = useState<{ got: number; total: number } | null>(null);
+  const [exoDraft, setExoDraft] = useState<{ exercice: Exercice; answers: Record<string, string> } | null>(null);
   const [schedule, setSchedule] = useState<ScheduleResult | null>(null);
   const [transitionSpec, setTransitionSpec] = useState<TransitionSpec | null>(null);
   const [transitionNext, setTransitionNext] = useState<Phase | null>(null);
@@ -308,13 +309,21 @@ export function TutorModal({
         }
         // Everything through the case study was saved but complete_tutor_session
         // never ran (crashed in the gap between that save and the write-back).
-        const parsedExercice: { correction: ExoCorrection | null } = JSON.parse(session.exercice_json);
+        const parsedExercice: { exercice?: Exercice; correction: ExoCorrection | null; draftAnswers?: Record<string, string> } =
+          JSON.parse(session.exercice_json);
         if (parsedExercice.correction) {
           const totalPts = parsedExercice.correction.corrections?.reduce((s, c) => s + (c.bareme || 0), 0) || 0;
           const gotPts =
             parsedExercice.correction.total ?? parsedExercice.correction.corrections?.reduce((s, c) => s + (c.note || 0), 0) ?? 0;
           exoResultLocal = { got: gotPts, total: totalPts };
           setExoResult(exoResultLocal);
+        } else if (parsedExercice.exercice) {
+          // Draft answers were saved but never submitted for correction —
+          // resume back into the exercice phase with them restored, rather
+          // than treating "some exercice_json exists" as "this phase is done".
+          setExoDraft({ exercice: parsedExercice.exercice, answers: parsedExercice.draftAnswers ?? {} });
+          setPhase("exercice");
+          return;
         }
       }
 
@@ -722,10 +731,19 @@ export function TutorModal({
                 ue={ueCode}
                 model={model}
                 adhd={adhd}
+                initialExercice={exoDraft?.exercice}
+                initialAnswers={exoDraft?.answers}
                 onHint={setProgressHint}
                 celebrate={celebrate}
                 onExercice={(exercice, correction) => {
                   exerciceRef.current = { exercice, correction };
+                }}
+                onDraftSave={(exercice, answers) => {
+                  if (tutorSessionId) {
+                    api.saveTutorSessionProgress(tutorSessionId, {
+                      exercice_json: JSON.stringify({ exercice, correction: null, draftAnswers: answers }),
+                    });
+                  }
                 }}
                 onNext={onExoDone}
               />

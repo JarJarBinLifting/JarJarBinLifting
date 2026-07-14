@@ -90,6 +90,10 @@
 .tutor-tf:focus {
   border-color: var(--t-pri);
 }
+.tutor-tf:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
 
 .tutor-cb {
   max-width: 85%;

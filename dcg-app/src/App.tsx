@@ -110,7 +110,7 @@ export default function App() {
   const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getLocalConfig().then((cfg) => setDbConfigured(!!cfg.db_path));
+    api.getLocalConfig().then((cfg) => setDbConfigured(cfg.db_open));
   }, []);
 
   const retry = async () => {
@@ -119,7 +119,7 @@ export default function App() {
     try {
       await api.ensureDefaultDb();
       const cfg = await api.getLocalConfig();
-      setDbConfigured(!!cfg.db_path);
+      setDbConfigured(cfg.db_open);
     } catch (e) {
       setRetryError(String(e));
     } finally {

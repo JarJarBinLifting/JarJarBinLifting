@@ -48,8 +48,34 @@ export function SettingsScreen() {
           abonnement claude.ai, qui ne peut pas être connecté à une application tierce.
         </p>
         {keyStatus && (
-          <div style={{ fontSize: 12, color: keyStatus.has_key ? "var(--accent-green)" : "var(--muted)", marginBottom: 10 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: !keyStatus.has_key
+                ? "var(--muted)"
+                : keyStatus.storage === "plaintext_fallback"
+                  ? "var(--accent-yellow)"
+                  : "var(--accent-green)",
+              marginBottom: 10,
+            }}
+          >
             {keyStatus.has_key ? `Clé enregistrée — ${STORAGE_LABEL[keyStatus.storage]}` : "Aucune clé enregistrée."}
+          </div>
+        )}
+        {keyStatus?.storage === "plaintext_fallback" && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--accent-yellow)",
+              lineHeight: 1.6,
+              marginBottom: 12,
+              padding: "8px 10px",
+              border: "1px solid var(--accent-yellow)",
+              borderRadius: 2,
+            }}
+          >
+            Aucun trousseau système n'a été détecté : ta clé est enregistrée en clair dans un fichier local
+            (non synchronisé). Elle reste sur cette machine, mais n'est pas chiffrée sur disque.
           </div>
         )}
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>

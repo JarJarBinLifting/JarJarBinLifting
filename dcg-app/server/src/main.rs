@@ -81,7 +81,15 @@ fn api_router() -> Router<AppState> {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let state = AppState { db: Arc::new(DbState::default()) };
+    // Generous but bounded: a full story generation can legitimately run for
+    // over a minute at high max_tokens, but an unbounded client means a
+    // stalled connection hangs the tutor forever with no way to recover
+    // short of restarting the app.
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .expect("failed to build HTTP client");
+    let state = AppState { db: Arc::new(DbState::default()), http };
 
     let opened = match handlers::settings::reopen_configured_db(&state) {
         Ok(true) => true,

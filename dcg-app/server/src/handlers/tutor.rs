@@ -151,44 +151,46 @@ pub struct TutorSessionPatch {
     pub output_tokens: Option<i64>,
 }
 
+fn apply_tutor_session_patch(conn: &Connection, id: i64, patch: &TutorSessionPatch) -> rusqlite::Result<TutorSessionRow> {
+    conn.execute(
+        "UPDATE tutor_sessions SET
+            story_json = COALESCE(?1, story_json),
+            concepts_json = COALESCE(?2, concepts_json),
+            confidence_json = COALESCE(?3, confidence_json),
+            qcm_json = COALESCE(?4, qcm_json),
+            qcm_results_json = COALESCE(?5, qcm_results_json),
+            qcm_score = COALESCE(?6, qcm_score),
+            qcm_total = COALESCE(?7, qcm_total),
+            socratique_transcript_json = COALESCE(?8, socratique_transcript_json),
+            exercice_json = COALESCE(?9, exercice_json),
+            bilan_json = COALESCE(?10, bilan_json),
+            input_tokens = COALESCE(?11, input_tokens),
+            output_tokens = COALESCE(?12, output_tokens),
+            updated_at = datetime('now')
+         WHERE id = ?13",
+        params![
+            patch.story_json,
+            patch.concepts_json,
+            patch.confidence_json,
+            patch.qcm_json,
+            patch.qcm_results_json,
+            patch.qcm_score,
+            patch.qcm_total,
+            patch.socratique_transcript_json,
+            patch.exercice_json,
+            patch.bilan_json,
+            patch.input_tokens,
+            patch.output_tokens,
+            id,
+        ],
+    )?;
+    get_tutor_session(conn, id)
+}
+
 pub async fn save_tutor_session_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(patch): Json<TutorSessionPatch>) -> Result<Json<TutorSessionRow>, AppError> {
-    with_conn(&state.db, |conn| {
-        conn.execute(
-            "UPDATE tutor_sessions SET
-                story_json = COALESCE(?1, story_json),
-                concepts_json = COALESCE(?2, concepts_json),
-                confidence_json = COALESCE(?3, confidence_json),
-                qcm_json = COALESCE(?4, qcm_json),
-                qcm_results_json = COALESCE(?5, qcm_results_json),
-                qcm_score = COALESCE(?6, qcm_score),
-                qcm_total = COALESCE(?7, qcm_total),
-                socratique_transcript_json = COALESCE(?8, socratique_transcript_json),
-                exercice_json = COALESCE(?9, exercice_json),
-                bilan_json = COALESCE(?10, bilan_json),
-                input_tokens = COALESCE(?11, input_tokens),
-                output_tokens = COALESCE(?12, output_tokens),
-                updated_at = datetime('now')
-             WHERE id = ?13",
-            params![
-                patch.story_json,
-                patch.concepts_json,
-                patch.confidence_json,
-                patch.qcm_json,
-                patch.qcm_results_json,
-                patch.qcm_score,
-                patch.qcm_total,
-                patch.socratique_transcript_json,
-                patch.exercice_json,
-                patch.bilan_json,
-                patch.input_tokens,
-                patch.output_tokens,
-                id,
-            ],
-        )?;
-        get_tutor_session(conn, id)
-    })
-    .map(Json)
-    .map_err(AppError)
+    with_conn(&state.db, |conn| apply_tutor_session_patch(conn, id, &patch))
+        .map(Json)
+        .map_err(AppError)
 }
 
 pub async fn abandon_tutor_session(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
@@ -307,78 +309,80 @@ pub struct CompleteSessionRequest {
 /// planner's world: marks the session completed, logs the QCM score, updates
 /// the chapter-level Leitner schedule, and marks the chapter done.
 pub async fn complete_tutor_session(State(state): State<AppState>, Path(tutor_session_id): Path<i64>, Json(body): Json<CompleteSessionRequest>) -> Result<Json<CompleteTutorSessionResult>, AppError> {
-    with_conn(&state.db, |conn| {
-        let (chapter_id, qcm_score, qcm_total): (i64, Option<i64>, Option<i64>) = conn.query_row(
-            "SELECT chapter_id, qcm_score, qcm_total FROM tutor_sessions WHERE id = ?1",
-            params![tutor_session_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
-        let qcm_score = qcm_score.unwrap_or(0);
-        let qcm_total = qcm_total.unwrap_or(0);
+    with_conn(&state.db, |conn| complete_tutor_session_inner(conn, tutor_session_id, &body))
+        .map(Json)
+        .map_err(AppError)
+}
 
-        conn.execute(
-            "UPDATE tutor_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
-             WHERE id = ?1",
-            params![tutor_session_id],
-        )?;
+fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: &CompleteSessionRequest) -> rusqlite::Result<CompleteTutorSessionResult> {
+    let (chapter_id, qcm_score, qcm_total): (i64, Option<i64>, Option<i64>) = conn.query_row(
+        "SELECT chapter_id, qcm_score, qcm_total FROM tutor_sessions WHERE id = ?1",
+        params![tutor_session_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let qcm_score = qcm_score.unwrap_or(0);
+    let qcm_total = qcm_total.unwrap_or(0);
 
-        let today = chrono::Local::now().date_naive();
-        let today_str = today.to_string();
+    conn.execute(
+        "UPDATE tutor_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ?1",
+        params![tutor_session_id],
+    )?;
 
-        conn.execute(
-            "INSERT INTO qcm_scores (chapter_id, tutor_session_id, date, score, total, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'tutor')",
-            params![chapter_id, tutor_session_id, today_str, qcm_score, qcm_total],
-        )?;
-        let qcm_score_id = conn.last_insert_rowid();
-        let qcm_score_row = conn.query_row(
-            "SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores WHERE id = ?1",
-            params![qcm_score_id],
-            row_to_qcm,
-        )?;
+    let today = chrono::Local::now().date_naive();
+    let today_str = today.to_string();
 
-        let current_box: i64 = conn
-            .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
-            .unwrap_or(1);
+    conn.execute(
+        "INSERT INTO qcm_scores (chapter_id, tutor_session_id, date, score, total, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'tutor')",
+        params![chapter_id, tutor_session_id, today_str, qcm_score, qcm_total],
+    )?;
+    let qcm_score_id = conn.last_insert_rowid();
+    let qcm_score_row = conn.query_row(
+        "SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores WHERE id = ?1",
+        params![qcm_score_id],
+        row_to_qcm,
+    )?;
 
-        let exam_date: Option<chrono::NaiveDate> = conn
-            .query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
-            .ok()
-            .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let current_box: i64 = conn
+        .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
+        .unwrap_or(1);
 
-        let result = SessionResult {
-            qcm_score,
-            qcm_total,
-            avg_confidence: body.avg_confidence,
-            overconfidence_count: body.overconfidence_count,
-        };
-        let upd = scheduler::next_schedule(current_box, result, today, exam_date);
+    let exam_date: Option<chrono::NaiveDate> = conn
+        .query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
+        .ok()
+        .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
-        conn.execute(
-            "INSERT INTO review_schedule (chapter_id, box, next_review_date, last_reviewed_date, last_outcome, last_tutor_session_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(chapter_id) DO UPDATE SET
-                box = excluded.box,
-                next_review_date = excluded.next_review_date,
-                last_reviewed_date = excluded.last_reviewed_date,
-                last_outcome = excluded.last_outcome,
-                last_tutor_session_id = excluded.last_tutor_session_id,
-                updated_at = datetime('now')",
-            params![chapter_id, upd.box_level, upd.next_review_date.to_string(), today_str, upd.outcome.as_str(), tutor_session_id],
-        )?;
+    let result = SessionResult {
+        qcm_score,
+        qcm_total,
+        avg_confidence: body.avg_confidence,
+        overconfidence_count: body.overconfidence_count,
+    };
+    let upd = scheduler::next_schedule(current_box, result, today, exam_date);
 
-        let chapter = set_chapter_status(conn, chapter_id, "done")?;
+    conn.execute(
+        "INSERT INTO review_schedule (chapter_id, box, next_review_date, last_reviewed_date, last_outcome, last_tutor_session_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(chapter_id) DO UPDATE SET
+            box = excluded.box,
+            next_review_date = excluded.next_review_date,
+            last_reviewed_date = excluded.last_reviewed_date,
+            last_outcome = excluded.last_outcome,
+            last_tutor_session_id = excluded.last_tutor_session_id,
+            updated_at = datetime('now')",
+        params![chapter_id, upd.box_level, upd.next_review_date.to_string(), today_str, upd.outcome.as_str(), tutor_session_id],
+    )?;
 
-        Ok(CompleteTutorSessionResult {
-            chapter,
-            qcm_score_row,
-            box_level: upd.box_level,
-            outcome: upd.outcome.as_str().to_string(),
-            next_review_date: upd.next_review_date.to_string(),
-        })
+    let chapter = set_chapter_status(conn, chapter_id, "done")?;
+
+    Ok(CompleteTutorSessionResult {
+        chapter,
+        qcm_score_row,
+        box_level: upd.box_level,
+        outcome: upd.outcome.as_str().to_string(),
+        next_review_date: upd.next_review_date.to_string(),
     })
-    .map(Json)
-    .map_err(AppError)
 }
 
 #[derive(Debug, Deserialize)]
@@ -498,4 +502,157 @@ pub async fn get_usage_summary(State(state): State<AppState>) -> Result<Json<Vec
     })
     .map(Json)
     .map_err(AppError)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrate;
+
+    /// Fresh in-memory DB, migrated, with one UE/chapter/in-progress session
+    /// ready to exercise — mirrors the pattern already used in
+    /// `db::migrate::tests`, but with the extra rows this module's queries
+    /// need (tutor_sessions and its FK chain back to chapters/ues).
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate::run(&conn).unwrap();
+        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", []).unwrap();
+        conn.execute("INSERT INTO chapters (ue_id, name) VALUES (1, 'Test chapter')", []).unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        conn
+    }
+
+    #[test]
+    fn patch_only_overwrites_the_fields_it_sets() {
+        let conn = setup();
+
+        let first = TutorSessionPatch {
+            story_json: Some(r#"{"titre":"histoire"}"#.into()),
+            concepts_json: None,
+            confidence_json: None,
+            qcm_json: None,
+            qcm_results_json: None,
+            qcm_score: None,
+            qcm_total: None,
+            socratique_transcript_json: None,
+            exercice_json: None,
+            bilan_json: None,
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+        };
+        let after_first = apply_tutor_session_patch(&conn, 1, &first).unwrap();
+        assert_eq!(after_first.story_json.as_deref(), Some(r#"{"titre":"histoire"}"#));
+        assert_eq!(after_first.input_tokens, 100);
+
+        // A later patch that only touches qcm_json must leave story_json and
+        // the token counts exactly as they were — this is the COALESCE
+        // behavior a resumed/crashed session depends on to not lose earlier
+        // phases' output.
+        let second = TutorSessionPatch {
+            story_json: None,
+            concepts_json: None,
+            confidence_json: None,
+            qcm_json: Some(r#"{"questions":[]}"#.into()),
+            qcm_results_json: None,
+            qcm_score: None,
+            qcm_total: None,
+            socratique_transcript_json: None,
+            exercice_json: None,
+            bilan_json: None,
+            input_tokens: None,
+            output_tokens: None,
+        };
+        let after_second = apply_tutor_session_patch(&conn, 1, &second).unwrap();
+        assert_eq!(after_second.story_json.as_deref(), Some(r#"{"titre":"histoire"}"#));
+        assert_eq!(after_second.qcm_json.as_deref(), Some(r#"{"questions":[]}"#));
+        assert_eq!(after_second.input_tokens, 100);
+        assert_eq!(after_second.output_tokens, 50);
+    }
+
+    #[test]
+    fn patch_overwrites_token_counts_rather_than_accumulating() {
+        let conn = setup();
+        let patch = TutorSessionPatch {
+            story_json: None,
+            concepts_json: None,
+            confidence_json: None,
+            qcm_json: None,
+            qcm_results_json: None,
+            qcm_score: None,
+            qcm_total: None,
+            socratique_transcript_json: None,
+            exercice_json: None,
+            bilan_json: None,
+            input_tokens: Some(10),
+            output_tokens: Some(5),
+        };
+        apply_tutor_session_patch(&conn, 1, &patch).unwrap();
+        let patch2 = TutorSessionPatch { input_tokens: Some(30), output_tokens: Some(12), ..no_op_patch() };
+        let after = apply_tutor_session_patch(&conn, 1, &patch2).unwrap();
+        // Frontend sends cumulative totals, not deltas — so this should land
+        // on the new value (30), not 10 + 30.
+        assert_eq!(after.input_tokens, 30);
+        assert_eq!(after.output_tokens, 12);
+    }
+
+    fn no_op_patch() -> TutorSessionPatch {
+        TutorSessionPatch {
+            story_json: None,
+            concepts_json: None,
+            confidence_json: None,
+            qcm_json: None,
+            qcm_results_json: None,
+            qcm_score: None,
+            qcm_total: None,
+            socratique_transcript_json: None,
+            exercice_json: None,
+            bilan_json: None,
+            input_tokens: None,
+            output_tokens: None,
+        }
+    }
+
+    #[test]
+    fn complete_tutor_session_updates_status_schedule_and_chapter() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE tutor_sessions SET qcm_score = 9, qcm_total = 10 WHERE id = 1",
+            [],
+        )
+        .unwrap();
+
+        let body = CompleteSessionRequest { avg_confidence: 2.5, overconfidence_count: 0 };
+        let result = complete_tutor_session_inner(&conn, 1, &body).unwrap();
+
+        assert_eq!(result.chapter.status, "done");
+        assert_eq!(result.qcm_score_row.score, 9);
+        assert_eq!(result.qcm_score_row.total, 10);
+        // Strong performance (85%+, confidence>=2, no overconfidence) from a
+        // first-ever session (baseline box 1) should advance to box 2.
+        assert_eq!(result.box_level, 2);
+
+        let status: String = conn.query_row("SELECT status FROM tutor_sessions WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(status, "completed");
+
+        let scheduled_box: i64 = conn.query_row("SELECT box FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(scheduled_box, 2);
+    }
+
+    #[test]
+    fn complete_tutor_session_is_idempotent_on_the_review_schedule_row() {
+        let conn = setup();
+        let body = CompleteSessionRequest { avg_confidence: 1.0, overconfidence_count: 3 };
+        complete_tutor_session_inner(&conn, 1, &body).unwrap();
+
+        // A second tutor session for the same chapter must UPDATE the
+        // existing review_schedule row (ON CONFLICT), not fail on the
+        // UNIQUE(chapter_id) constraint or insert a duplicate.
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        let second_id = conn.last_insert_rowid();
+        let result = complete_tutor_session_inner(&conn, second_id, &body).unwrap();
+        assert_eq!(result.outcome, "weak");
+
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
+    }
 }

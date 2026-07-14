@@ -63,7 +63,7 @@ backup, since everything lives in that one local file.
 - **Planner shell** (Dashboard / UE detail / Timer): tracks chapters, QCM
   scores, and study-session time, all persisted to SQLite through the
   planner routes.
-- **Tutor** (`src/components/tutor/`): a 7-phase AI-guided session per chapter
+- **Tutor** (`src/components/tutor/`): a 6-stage AI-guided session per chapter
   (story-driven discovery → flashcards → QCM → Socratic dialogue → case study →
   summary). Every phase's output (story, flashcards, confidence ratings, QCM
   results, the full Socratic transcript, the exercise + its correction) is
