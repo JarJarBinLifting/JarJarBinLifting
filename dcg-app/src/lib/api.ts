@@ -10,6 +10,7 @@ import type {
   SessionLogRow,
   TutorSessionRow,
   Ue,
+  WeakChapter,
 } from "./types";
 
 /// Every route this app talks to is same-origin (`/api/...`), served by the
@@ -195,5 +196,7 @@ export const completeTutorSession = (
 
 export const listDueChapters = (withinDays: number) =>
   get<DueChapter[]>(`/tutor/due-chapters?within_days=${withinDays}`);
+
+export const listWeakChapters = () => get<WeakChapter[]>("/tutor/weak-chapters");
 
 export const getUsageSummary = () => get<ModelUsageRow[]>("/tutor/usage");

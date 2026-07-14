@@ -2,7 +2,7 @@ use crate::appstate::{AppError, AppState};
 use crate::db::with_conn;
 use crate::handlers::planner::{row_to_qcm, set_chapter_status};
 use crate::handlers::scheduler::{self, SessionResult};
-use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, ModelUsageRow, TutorSessionRow};
+use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, ModelUsageRow, TutorSessionRow, WeakChapter};
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use rusqlite::{params, Connection};
@@ -341,13 +341,18 @@ pub async fn complete_tutor_session(State(state): State<AppState>, Path(tutor_se
             .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
             .unwrap_or(1);
 
+        let exam_date: Option<chrono::NaiveDate> = conn
+            .query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
+            .ok()
+            .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+
         let result = SessionResult {
             qcm_score,
             qcm_total,
             avg_confidence: body.avg_confidence,
             overconfidence_count: body.overconfidence_count,
         };
-        let upd = scheduler::next_schedule(current_box, result, today);
+        let upd = scheduler::next_schedule(current_box, result, today, exam_date);
 
         conn.execute(
             "INSERT INTO review_schedule (chapter_id, box, next_review_date, last_reviewed_date, last_outcome, last_tutor_session_id)
@@ -408,6 +413,56 @@ pub async fn list_due_chapters(State(state): State<AppState>, Query(q): Query<Du
                 next_review_date: row.get(6)?,
                 last_reviewed_date: row.get(7)?,
                 last_outcome: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+/// Every chapter that's been studied at least once (has a review_schedule
+/// row from a completed tutor session, and/or a manually- or tutor-entered
+/// QCM score), ranked weakest-first: lowest Leitner box first, then lowest
+/// latest QCM percentage as a tiebreak. Chapters never touched at all
+/// correctly don't show up — a "todo" chapter isn't weak, it's just not
+/// started. Answers "what should I actually study today" in one ranked list
+/// instead of the per-UE points_forts/points_faibles free text, which has to
+/// be kept up to date by hand.
+pub async fn list_weak_chapters(State(state): State<AppState>) -> Result<Json<Vec<WeakChapter>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.name, u.id, u.code, u.name, u.color,
+                    rs.box, rs.last_outcome, rs.next_review_date,
+                    latest.score, latest.total
+             FROM chapters c
+             JOIN ues u ON u.id = c.ue_id
+             LEFT JOIN review_schedule rs ON rs.chapter_id = c.id
+             LEFT JOIN qcm_scores latest ON latest.chapter_id = c.id
+                AND latest.id = (
+                    SELECT id FROM qcm_scores q2
+                    WHERE q2.chapter_id = c.id
+                    ORDER BY date DESC, id DESC
+                    LIMIT 1
+                )
+             WHERE rs.chapter_id IS NOT NULL OR latest.chapter_id IS NOT NULL
+             ORDER BY
+                COALESCE(rs.box, 1) ASC,
+                CASE WHEN latest.total > 0 THEN CAST(latest.score AS REAL) / latest.total ELSE 1.0 END ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(WeakChapter {
+                chapter_id: row.get(0)?,
+                chapter_name: row.get(1)?,
+                ue_id: row.get(2)?,
+                ue_code: row.get(3)?,
+                ue_name: row.get(4)?,
+                ue_color: row.get(5)?,
+                box_level: row.get(6)?,
+                last_outcome: row.get(7)?,
+                next_review_date: row.get(8)?,
+                latest_qcm_score: row.get(9)?,
+                latest_qcm_total: row.get(10)?,
             })
         })?;
         rows.collect()

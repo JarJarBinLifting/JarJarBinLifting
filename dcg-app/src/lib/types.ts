@@ -99,6 +99,20 @@ export interface DueChapter {
   last_outcome: ReviewOutcome | null;
 }
 
+export interface WeakChapter {
+  chapter_id: number;
+  chapter_name: string;
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  box_level: number | null;
+  last_outcome: ReviewOutcome | null;
+  next_review_date: string | null;
+  latest_qcm_score: number | null;
+  latest_qcm_total: number | null;
+}
+
 export interface CompleteTutorSessionResult {
   chapter: Chapter;
   qcm_score_row: QcmScoreRow;

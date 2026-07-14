@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAppState } from "../../state/AppState";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
-import type { Chapter, DueChapter } from "../../lib/types";
+import type { Chapter, DueChapter, WeakChapter } from "../../lib/types";
 import { Spin } from "./common";
 
 const OUTCOME_META: Record<string, { label: string; color: string }> = {
@@ -43,12 +43,53 @@ function DueRow({ d, onStudy }: { d: DueChapter; onStudy: (chapterId: number, ue
   );
 }
 
+const WEAK_SPOTS_SHOWN = 8;
+
+function WeakRow({ w, onStudy }: { w: WeakChapter; onStudy: (chapterId: number, ueId: number) => void }) {
+  const pct = w.latest_qcm_total && w.latest_qcm_total > 0 ? Math.round(((w.latest_qcm_score ?? 0) / w.latest_qcm_total) * 100) : null;
+  const outcome = w.last_outcome ? OUTCOME_META[w.last_outcome] : null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 14px",
+        background: "var(--card2)",
+        borderRadius: 2,
+        border: "1px solid var(--border)",
+        borderLeft: `3px solid ${w.ue_color ?? "var(--border)"}`,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: w.ue_color ?? "var(--muted)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>{w.ue_code} · {w.ue_name}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.chapter_name}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+        <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+          {w.box_level != null ? `boîte ${w.box_level}` : "jamais complété"}
+          {pct != null ? ` · QCM ${pct}%` : ""}
+        </span>
+        {outcome && <span style={{ fontSize: 10, fontWeight: 700, color: outcome.color }}>{outcome.label}</span>}
+      </div>
+      <button
+        onClick={() => onStudy(w.chapter_id, w.ue_id)}
+        style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "8px 12px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+      >
+        Réviser →
+      </button>
+    </div>
+  );
+}
+
 export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) => void }) {
   const { chapters, dueChapters, refreshAll } = useAppState();
   const [upcoming, setUpcoming] = useState<DueChapter[] | null>(null);
+  const [weak, setWeak] = useState<WeakChapter[] | null>(null);
 
   useEffect(() => {
     api.listDueChapters(30).then(setUpcoming);
+    api.listWeakChapters().then(setWeak);
   }, [dueChapters]);
 
   const today = todayIso();
@@ -57,6 +98,7 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
   const dueThisWeek = due.filter((d) => d.next_review_date > today);
   const laterIds = new Set(due.map((d) => d.chapter_id));
   const later = (upcoming ?? []).filter((d) => !laterIds.has(d.chapter_id));
+  const weakest = (weak ?? []).slice(0, WEAK_SPOTS_SHOWN);
 
   const handleStudy = (chapterId: number) => {
     const c = chapters.find((x) => x.id === chapterId);
@@ -69,6 +111,14 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
         Chaque chapitre revient automatiquement selon ta performance — pas de planning fixe à tenir à jour.
       </div>
+
+      {weakest.length > 0 && (
+        <Section title={`Points faibles (${weak?.length ?? 0})`} color="var(--accent-purple)" empty="">
+          {weakest.map((w) => (
+            <WeakRow key={w.chapter_id} w={w} onStudy={handleStudy} />
+          ))}
+        </Section>
+      )}
 
       <Section title={`À réviser aujourd'hui (${dueToday.length})`} color="var(--accent-red)" empty="Rien de prévu aujourd'hui — bien joué.">
         {dueToday.map((d) => (

@@ -95,6 +95,26 @@ pub struct DueChapter {
     pub last_outcome: Option<String>,
 }
 
+/// One row of the cross-UE weak-spot ranking: any chapter that's been
+/// studied at least once (has a review_schedule row and/or a QCM score),
+/// ranked weakest-first. `box_level`/`last_outcome`/`next_review_date` are
+/// null for a chapter that only has manually-entered QCM scores and never
+/// went through a full tutor session.
+#[derive(Debug, Serialize, Clone)]
+pub struct WeakChapter {
+    pub chapter_id: i64,
+    pub chapter_name: String,
+    pub ue_id: i64,
+    pub ue_code: String,
+    pub ue_name: String,
+    pub ue_color: Option<String>,
+    pub box_level: Option<i64>,
+    pub last_outcome: Option<String>,
+    pub next_review_date: Option<String>,
+    pub latest_qcm_score: Option<i64>,
+    pub latest_qcm_total: Option<i64>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct CompleteTutorSessionResult {
     pub chapter: Chapter,
