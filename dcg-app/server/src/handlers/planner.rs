@@ -13,7 +13,7 @@ use serde::Deserialize;
 /// chapter breakdown (their export was empty there too).
 const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
     (
-        "UE2", "Droit des affaires", "#5B9CF7",
+        "UE2", "Droit des affaires", "#6b7c3f",
         &[
             "Ch.1 — Les sources du droit des affaires",
             "Ch.2 — La société, un contrat",
@@ -36,7 +36,7 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
         ],
     ),
     (
-        "UE3", "Droit social", "#B57BF7",
+        "UE3", "Droit social", "#7a3346",
         &[
             "Ch.1 — Les situations de travail et la protection sociale",
             "Ch.2 — Les régimes sociaux",
@@ -66,11 +66,11 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
         ],
     ),
     (
-        "UE4", "Droit fiscal", "#F87171",
+        "UE4", "Droit fiscal", "#a6402f",
         &["Introduction à la fiscalité", "La TVA", "L'impôt sur les sociétés", "L'IR — BIC", "L'IR — BNC et BA", "Droits d'enregistrement", "Fiscalité locale", "Procédure fiscale"],
     ),
     (
-        "UE6", "Finance d'entreprise", "#34D399",
+        "UE6", "Finance d'entreprise", "#2f6b5e",
         &[
             "Ch.1 — La démarche du diagnostic financier et extra-financier",
             "Ch.2 — L'analyse de l'activité",
@@ -94,7 +94,7 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
         ],
     ),
     (
-        "UE7", "Management", "#FBBF24",
+        "UE7", "Management", "#b8863f",
         &[
             "Ch.1 — Les objectifs et les périmètres du management",
             "Ch.2 — La diversité des organisations et leur environnement",
@@ -111,11 +111,11 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
         ],
     ),
     (
-        "UE10", "Compta approfondie", "#22D3EE",
+        "UE10", "Compta approfondie", "#3f7d95",
         &["Opérations courantes", "Opérations de fin d'exercice", "Provisions et dépréciations", "Immobilisations corporelles", "Immobilisations incorporelles", "Les capitaux propres", "Comptes consolidés", "Normes IFRS", "Opérations particulières"],
     ),
     (
-        "UE11", "Contrôle de gestion", "#F472B6",
+        "UE11", "Contrôle de gestion", "#a85d72",
         &[
             "Ch.1 — Les prémices du contrôle de gestion",
             "Ch.2 — Le contrôle de gestion en pratique",
@@ -139,7 +139,7 @@ const DEFAULT_CURRICULUM: &[(&str, &str, &str, &[&str])] = &[
         ],
     ),
     (
-        "UE12", "Anglais des affaires", "#FB923C",
+        "UE12", "Anglais des affaires", "#8a6a3f",
         &[],
     ),
 ];

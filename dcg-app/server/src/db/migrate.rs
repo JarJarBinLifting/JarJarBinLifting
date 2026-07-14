@@ -20,6 +20,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "revision mode",
         include_str!("../../migrations/0004_revision_mode.sql"),
     ),
+    (
+        5,
+        "ledger colors",
+        include_str!("../../migrations/0005_ledger_colors.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;

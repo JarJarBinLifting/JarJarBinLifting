@@ -45,7 +45,7 @@ export function Dashboard({
             DCG{" "}
             <span
               style={{
-                background: "linear-gradient(125deg,#5B9CF7,#B57BF7)",
+                background: "linear-gradient(125deg,#2f6b5e,#b8863f)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
               }}

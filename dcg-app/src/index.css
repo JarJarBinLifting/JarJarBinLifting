@@ -1,53 +1,58 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root[data-theme="dark"] {
-  --bg: #060d1c;
-  --card: #0c1422;
-  --card2: #101928;
-  --border: #172035;
-  --text: #d2e0f0;
-  --muted: #435878;
-  --input: #060d1c;
-  --input-border: #172035;
-  --track: #182035;
+  /* Banker's-lamp ledger: deep forest green, warm ivory ink, brass accents */
+  --bg: #0f1c14;
+  --card: #16261a;
+  --card2: #1c2f21;
+  --border: #2b4030;
+  --text: #e8e2cd;
+  --muted: #7c9081;
+  --input: #0f1c14;
+  --input-border: #2b4030;
+  --track: #23361f;
+  --ledger-rule: rgba(184, 220, 195, 0.05);
 }
 
 :root[data-theme="light"] {
-  --bg: #ebf0ff;
-  --card: #ffffff;
-  --card2: #f4f7ff;
-  --border: #d8e2ff;
-  --text: #18264a;
-  --muted: #7a90be;
-  --input: #fafbff;
-  --input-border: #c0d0f0;
-  --track: #dde8ff;
+  /* Classic ledger paper: aged ivory, forest-green ink, brass rule lines */
+  --bg: #f3ecd8;
+  --card: #faf6ea;
+  --card2: #efe6cd;
+  --border: #d6c9a0;
+  --text: #1e2b1a;
+  --muted: #746b4c;
+  --input: #faf6ea;
+  --input-border: #cbbb8c;
+  --track: #e6dcbe;
+  --ledger-rule: rgba(120, 100, 40, 0.07);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #060d1c;
-    --card: #0c1422;
-    --card2: #101928;
-    --border: #172035;
-    --text: #d2e0f0;
-    --muted: #435878;
-    --input: #060d1c;
-    --input-border: #172035;
-    --track: #182035;
+    --bg: #0f1c14;
+    --card: #16261a;
+    --card2: #1c2f21;
+    --border: #2b4030;
+    --text: #e8e2cd;
+    --muted: #7c9081;
+    --input: #0f1c14;
+    --input-border: #2b4030;
+    --track: #23361f;
+    --ledger-rule: rgba(184, 220, 195, 0.05);
   }
 }
 
 :root {
-  --accent-blue: #5b9cf7;
-  --accent-purple: #b57bf7;
-  --accent-red: #f87171;
-  --accent-green: #34d399;
-  --accent-yellow: #fbbf24;
-  --accent-cyan: #22d3ee;
-  --accent-pink: #f472b6;
+  --accent-blue: #2f6b5e;
+  --accent-purple: #7a3346;
+  --accent-red: #a6402f;
+  --accent-green: #4f9c4f;
+  --accent-yellow: #b8863f;
+  --accent-cyan: #3f7d95;
+  --accent-pink: #a85d72;
 
-  --font-display: "Syne", sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
   --font-body: "DM Sans", sans-serif;
   --font-mono: "DM Mono", monospace;
   --font-story: "Libre Baskerville", Georgia, serif;
@@ -66,7 +71,15 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  /* Faint horizontal ledger-rule lines, like ruled accounting paper */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    var(--ledger-rule) 27px,
+    var(--ledger-rule) 28px
+  );
   color: var(--text);
   font-family: var(--font-body);
 }
@@ -78,7 +91,7 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3a55;
+  background: #8a7245;
   border-radius: 2px;
 }
 
