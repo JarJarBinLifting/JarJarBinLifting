@@ -30,21 +30,38 @@ pub struct CallAnthropicRequest {
     pub messages: Vec<AnthropicMessage>,
     pub max_tokens: Option<u32>,
     pub model: Option<String>,
+    /// Set for multi-turn call sites (Socratic dialogue, exercise-correction
+    /// chat) where the same system prompt + growing message history is
+    /// resent on every turn. Adds a top-level `cache_control`, which the API
+    /// auto-places on the last cacheable block — caching everything before
+    /// it (system + prior turns) so each new turn only pays full price for
+    /// itself. One-shot calls (story/flashcards/QCM) get no benefit from
+    /// this, since there's no second request to read the cache back.
+    pub cache: Option<bool>,
 }
 
 /// The only place in the whole app that talks to api.anthropic.com. The key
 /// is read Rust-side (see handlers::settings::read_api_key) and never crosses
 /// into an HTTP response — the frontend only ever calls this endpoint and
 /// gets text back.
-async fn call_anthropic_inner(system: String, messages: Vec<AnthropicMessage>, max_tokens: Option<u32>, model: Option<String>) -> Result<AnthropicResult, String> {
+async fn call_anthropic_inner(
+    system: String,
+    messages: Vec<AnthropicMessage>,
+    max_tokens: Option<u32>,
+    model: Option<String>,
+    cache: bool,
+) -> Result<AnthropicResult, String> {
     let key = read_api_key().ok_or_else(|| "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string())?;
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
         "max_tokens": max_tokens.unwrap_or(4096),
         "system": system,
         "messages": messages,
     });
+    if cache {
+        body["cache_control"] = serde_json::json!({"type": "ephemeral"});
+    }
 
     let client = reqwest::Client::new();
     let resp = client
@@ -88,7 +105,7 @@ async fn call_anthropic_inner(system: String, messages: Vec<AnthropicMessage>, m
 }
 
 pub async fn call_anthropic(Json(body): Json<CallAnthropicRequest>) -> Result<Json<AnthropicResult>, AppError> {
-    call_anthropic_inner(body.system, body.messages, body.max_tokens, body.model)
+    call_anthropic_inner(body.system, body.messages, body.max_tokens, body.model, body.cache.unwrap_or(false))
         .await
         .map(Json)
         .map_err(AppError)
@@ -104,6 +121,7 @@ pub async fn test_anthropic_connection() -> Result<Json<bool>, AppError> {
         }],
         Some(8),
         None,
+        false,
     )
     .await
     .map(|_| Json(true))

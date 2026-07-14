@@ -93,7 +93,7 @@ export function ExoPhase({
       setFu("");
       setLdChat(true);
       try {
-        const r = await genChat(prompts.corrChat(ue, exText), n, 1500, model);
+        const r = await genChat(prompts.corrChat(ue, exText), n, 1500, model, true);
         setChatMsgs((p) => [...p, { role: "assistant", content: r }]);
       } catch (e: any) {
         setChatMsgs((p) => [...p, { role: "assistant", content: `Erreur: ${e?.message ?? e}` }]);

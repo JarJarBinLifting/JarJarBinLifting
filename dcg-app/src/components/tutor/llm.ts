@@ -1,6 +1,14 @@
 import * as api from "../../lib/api";
 import type { AnthropicMessageInput } from "../../lib/api";
 
+/** Fixed cheap tier for short, low-stakes acknowledgment calls (confirming a
+ * reformulation, checking a one-line recall answer) — these don't need the
+ * pedagogical judgment of the user's chosen tutor model, so they always run
+ * on Haiku regardless of the Settings model picker. Story generation, feedback
+ * on a first-time concept, Socratic dialogue, and exercise correction stay on
+ * the user's chosen model since those calls carry real teaching weight. */
+export const CHEAP_MODEL = "claude-haiku-4-5";
+
 function safeParse(raw: string): { ok: true; data: any } | { ok: false } {
   const clean = raw.replace(/```json|```/g, "").trim();
   try {
@@ -78,12 +86,13 @@ async function callWithRetry(
   messages: AnthropicMessageInput[],
   maxTokens: number,
   model?: string,
+  cache = false,
   retries = 3,
 ): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const r = await api.callAnthropic(system, messages, maxTokens, model);
+      const r = await api.callAnthropic(system, messages, maxTokens, model, cache);
       usageListener?.({ inputTokens: r.input_tokens, outputTokens: r.output_tokens });
       return r.text;
     } catch (e) {
@@ -100,9 +109,14 @@ export async function genText(system: string, content: unknown, maxTokens = 4096
   return callWithRetry(system, [{ role: "user", content }], maxTokens, model);
 }
 
-/** Same as genText but conversational (multi-turn) — messages is the full transcript. */
-export async function genChat(system: string, messages: AnthropicMessageInput[], maxTokens = 1000, model?: string): Promise<string> {
-  return callWithRetry(system, messages, maxTokens, model);
+/** Same as genText but conversational (multi-turn) — messages is the full transcript.
+ * `cache` marks the request for prompt caching: the system prompt here (Socratic
+ * dialogue / exercise-correction chat) embeds substantial stable content — the
+ * chapter text or the generated exercise — and is resent unchanged on every turn
+ * of the conversation, so caching it avoids re-billing that content at full price
+ * each message. */
+export async function genChat(system: string, messages: AnthropicMessageInput[], maxTokens = 1000, model?: string, cache = false): Promise<string> {
+  return callWithRetry(system, messages, maxTokens, model, cache);
 }
 
 /** JSON generation. Network/rate-limit failures are already retried with

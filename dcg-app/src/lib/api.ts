@@ -75,7 +75,8 @@ export const callAnthropic = (
   messages: AnthropicMessageInput[],
   maxTokens = 4096,
   model?: string,
-) => post<AnthropicCallResult>("/anthropic/call", { system, messages, maxTokens, model });
+  cache = false,
+) => post<AnthropicCallResult>("/anthropic/call", { system, messages, maxTokens, model, cache });
 
 export const testAnthropicConnection = () => post<boolean>("/anthropic/test");
 

@@ -55,7 +55,7 @@ export function SocratPhase({
       setTurns((n) => n + 1);
       const tr = all.length > MAX_CHAT ? all.slice(-MAX_CHAT) : all;
       try {
-        const r = await genChat(sys, tr, 1000, model);
+        const r = await genChat(sys, tr, 1000, model, true);
         setMsgs((p) => [...p, { role: "assistant", content: r }]);
       } catch (e: any) {
         setMsgs((p) => [...p, { role: "assistant", content: `Erreur: ${e?.message ?? e}` }]);
@@ -70,7 +70,7 @@ export function SocratPhase({
     setMsgs([]);
     setLoading(true);
     try {
-      const r = await genChat(sys, [{ role: "user", content: "Commence. Pose-moi une première question." }], 1000, model);
+      const r = await genChat(sys, [{ role: "user", content: "Commence. Pose-moi une première question." }], 1000, model, true);
       setMsgs([{ role: "assistant", content: r }]);
     } catch (e: any) {
       setMsgs([{ role: "assistant", content: `Erreur: ${e?.message ?? e}` }]);

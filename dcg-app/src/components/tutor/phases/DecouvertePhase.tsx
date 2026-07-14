@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ConceptConfidence, Story } from "../../../lib/types";
 import { ACT_TYPES, RECALL_EVERY, prompts } from "../prompts";
-import { genText } from "../llm";
+import { genText, CHEAP_MODEL } from "../llm";
 import { Consigne, TutorSpin } from "../shared";
 
 type Sub = "context" | "feedback" | "reveal" | "reform_ack" | "confidence" | "recall" | "recall_done" | "epilogue";
@@ -85,7 +85,7 @@ export function DecouvertePhase({
         prompts.reformAck(ueCode),
         `Le concept est : "${e.notion}" — ${e.a_retenir}\n\nMa reformulation : ${reformText.trim()}`,
         300,
-        model,
+        CHEAP_MODEL,
       );
       setReformAck(r);
       celebrate("");
@@ -100,7 +100,7 @@ export function DecouvertePhase({
     setLoading(true);
     const recallE = etapes[Math.max(0, step - RECALL_EVERY)];
     try {
-      const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300, model);
+      const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300, CHEAP_MODEL);
       setRecallFb(r);
       celebrate("");
     } catch {
