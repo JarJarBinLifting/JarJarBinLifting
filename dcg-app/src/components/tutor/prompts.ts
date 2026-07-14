@@ -11,6 +11,7 @@ export const KIND_TUTOR =
 
 export const prompts = {
   story: (ue: string) => `Expert DCG ${ue}, pédagogue brillant. Transforme le chapitre en HISTOIRE IMMERSIVE.
+COUVERTURE COMPLÈTE OBLIGATOIRE : identifie TOUTES les notions distinctes et testables du contenu fourni, sans exception. Une étape par notion — n'en saute, ne fusionne, ni ne résume aucune pour tenir dans un nombre d'étapes réduit. Un chapitre dense peut légitimement produire 15, 20 étapes ou plus ; il n'y a pas de plafond artificiel.
 Invente un personnage et une entreprise réaliste. Chaque étape introduit UNE notion via ce qui arrive au personnage.
 Pour chaque étape, VARIE le type d'activité (champ "type_activite") en alternant entre:
 - "prediction": l'étudiant prédit le concept avant de le découvrir
@@ -34,13 +35,13 @@ JSON pur (pas de markdown):
   }],
   "epilogue":"Conclusion 2-3 phrases"
 }
-6 à 8 étapes max. Alterne vraiment les types. IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
+Alterne vraiment les types d'activité sur l'ensemble des étapes. IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
 
-  flash: (ue: string, story: any) => `Expert DCG ${ue}. 12 flashcards couvrant TOUTES les notions essentielles du chapitre.
+  flash: (ue: string, story: any) => `Expert DCG ${ue}. Génère les flashcards couvrant TOUTES les notions essentielles du chapitre, sans exception — au moins une carte par étape de l'histoire ci-dessous, plus une carte pour chaque notion secondaire importante (définition, exception, condition) que l'histoire n'aurait pas couverte explicitement. Pas de plafond fixe : un chapitre dense demande plus de cartes qu'un chapitre court.
 CONTEXTE NARRATIF: l'étudiant a appris via l'histoire de ${story.personnage} (${story.entreprise}). Étapes:
 ${story.etapes.map((e: any, i: number) => `${i + 1}. ${e.titre_court} — ${e.notion}`).join("\n")}
 Quand pertinent, contextualise le recto dans cet univers. Le verso reste la règle générale précise.
-Chaque carte référence son étape via "etape" (1-based).
+Chaque carte référence son étape via "etape" (1-based) — utilise 0 pour une notion secondaire non liée à une étape précise.
 JSON pur: {"cards":[{"recto":"...","verso":"...","theme":"Thème court","etape":1}]}
 IMPORTANT: réponds UNIQUEMENT avec le JSON.`,
 

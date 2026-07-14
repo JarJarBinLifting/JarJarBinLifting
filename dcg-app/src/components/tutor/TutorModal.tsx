@@ -353,7 +353,7 @@ export function TutorModal({
 
       const content: unknown = cfg.fileContent ? [cfg.fileContent, { type: "text", text: cfg.text.trim() || "Analyse le document." }] : cfg.text;
       contentRef.current = content;
-      const storyData = await genJson<Story>(prompts.story(ueCode), content, 8192, model);
+      const storyData = await genJson<Story>(prompts.story(ueCode), content, 16000, model);
       setStory(storyData);
       await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(storyData) });
       setPhase("decouverte");
@@ -361,7 +361,7 @@ export function TutorModal({
       if (existingFlashcards.length > 0) {
         setFlashcards(existingFlashcards);
       } else if (contentRef.current) {
-        genJson<{ cards: { recto: string; verso: string; theme: string; etape: number }[] }>(prompts.flash(ueCode, storyData), contentRef.current, 4096, model)
+        genJson<{ cards: { recto: string; verso: string; theme: string; etape: number }[] }>(prompts.flash(ueCode, storyData), contentRef.current, 8000, model)
           .then((f) => api.saveFlashcards(chapterId, session.id, f.cards.map((c) => ({ concept_id: String(c.etape ?? ""), question: c.recto, answer: c.verso }))))
           .then(setFlashcards)
           .catch((e) => setError("Flashcards : " + (e?.message ?? e)));
