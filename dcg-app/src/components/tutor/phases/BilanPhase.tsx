@@ -35,11 +35,13 @@ export function BilanPhase({
   data,
   schedule,
   compteRendu,
+  completedStages,
   onFinish,
 }: {
   data: BilanData;
   schedule: ScheduleResult | null;
   compteRendu: string | null;
+  completedStages: string[];
   onFinish: () => void;
 }) {
   const { storyTitle, flashTotal, flashFails, qcmScore, qcmTotal, missed, difficulty, adapted, confidences, exoScore, exoTotal, adhd, isRevision } = data;
@@ -58,6 +60,19 @@ export function BilanPhase({
     <div className="tutor-card" style={{ textAlign: "center" }}>
       <h2 style={{ fontFamily: "var(--font-story)", fontSize: 20, color: "var(--t-pri)", marginBottom: 4 }}>{isRevision ? "Bilan de révision" : "Bilan de maîtrise"}</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>{storyTitle}</p>
+
+      {completedStages.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Session complète — voici ce que tu as fait :</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+            {completedStages.map((s) => (
+              <span key={s} style={{ fontSize: 11, fontWeight: 700, color: "var(--t-ok)", border: "1px solid var(--t-ok)", borderRadius: 2, padding: "4px 10px" }}>
+                {s} ✓
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10, marginBottom: 20 }}>
         {[

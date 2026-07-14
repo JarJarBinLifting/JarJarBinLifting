@@ -4,6 +4,7 @@ import * as api from "../../lib/api";
 import { fmtDuration } from "../../lib/format";
 
 const PRESETS: [string, number][] = [
+  ["15 min", 15 * 60],
   ["30 min", 30 * 60],
   ["1 heure", 3600],
   ["2 heures", 7200],
@@ -47,8 +48,8 @@ export function Timer() {
   const accent = ue?.color || "var(--accent-blue)";
 
   const reset = async () => {
-    if (elapsed > 60 && ueId && startedAt) {
-      await api.addTimerSession(Number(ueId), null, presetLabel(max), elapsed, startedAt, new Date().toISOString());
+    if (elapsed > 60 && startedAt) {
+      await api.addTimerSession(ueId ? Number(ueId) : null, null, presetLabel(max), elapsed, startedAt, new Date().toISOString());
       await refreshAll();
     }
     setRunning(false);
@@ -88,13 +89,13 @@ export function Timer() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", display: "block", marginBottom: 7, letterSpacing: 1.5 }}>UE TRAVAILLÉE</label>
+        <label style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", display: "block", marginBottom: 7, letterSpacing: 1.5 }}>UE TRAVAILLÉE (OPTIONNEL)</label>
         <select
           value={ueId}
           onChange={(e) => setUeId(e.target.value ? Number(e.target.value) : "")}
           style={{ width: "100%", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
         >
-          <option value="">— Sélectionner une UE —</option>
+          <option value="">— Session libre, pas d'UE —</option>
           {ues.map((u) => (
             <option key={u.id} value={u.id}>
               {u.code} · {u.name}
@@ -106,8 +107,7 @@ export function Timer() {
       <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <button
           onClick={() => setRunning((r) => !r)}
-          disabled={!ueId}
-          style={{ flex: 1, fontSize: 14, padding: 14, fontWeight: 700, background: running ? "var(--accent-red)" : "var(--accent-green)", color: "#fff", border: "none", borderRadius: 2, opacity: !ueId ? 0.5 : 1 }}
+          style={{ flex: 1, fontSize: 14, padding: 14, fontWeight: 700, background: running ? "var(--accent-red)" : "var(--accent-green)", color: "#fff", border: "none", borderRadius: 2 }}
         >
           {running ? "Pause" : "Démarrer"}
         </button>

@@ -33,7 +33,7 @@ function MainApp() {
   return (
     <div style={{ minHeight: "100vh" }}>
       <div style={{ paddingBottom: 72 }}>
-        {view === "dash" && <Dashboard onOpenUe={openUe} onNavigate={navigate} />}
+        {view === "dash" && <Dashboard onOpenUe={openUe} onNavigate={navigate} onQuickStart={(c) => setStudyingChapter(c)} />}
         {view === "ue" && selectedUe && (
           <UEDetail ue={selectedUe} onBack={() => navigate("dash")} onStudyChapter={(c) => setStudyingChapter(c)} />
         )}

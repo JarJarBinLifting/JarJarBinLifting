@@ -1,21 +1,63 @@
 import { useEffect, useState } from "react";
 import { useAppState } from "../../state/AppState";
 import { useTheme } from "../../lib/theme";
-import { avgScorePct, chapterProgress, countdownTo } from "../../lib/format";
-import type { Ue } from "../../lib/types";
+import * as api from "../../lib/api";
+import { avgScorePct, chapterProgress, computeStudyStreak, countdownTo, daysSinceLastActivity } from "../../lib/format";
+import type { Chapter, Ue, WeakChapter } from "../../lib/types";
 import { StatTile } from "./common";
 import type { ShellView } from "./Nav";
+
+/** Days since the last activity at or above which the smart-start banner
+ * switches to "gentle re-entry" framing instead of plain quick-start. */
+const GAP_THRESHOLD_DAYS = 3;
+
+type QuickStartReason = "gentle" | "weak" | "due" | "next";
+
+const REASON_LABEL: Record<QuickStartReason, string> = {
+  gentle: "REPRISE EN DOUCEUR",
+  weak: "DÉMARRAGE RAPIDE — POINT FAIBLE",
+  due: "DÉMARRAGE RAPIDE — À RÉVISER",
+  next: "DÉMARRAGE RAPIDE — PROCHAIN CHAPITRE",
+};
+
+function pickQuickStart(
+  chapters: Chapter[],
+  weak: WeakChapter[],
+  dueChapterIds: number[],
+  gapDays: number | null,
+): { chapter: Chapter; reason: QuickStartReason } | null {
+  const byId = (id: number) => chapters.find((c) => c.id === id);
+
+  if (gapDays !== null && gapDays >= GAP_THRESHOLD_DAYS) {
+    const revisable = weak.find((w) => w.box_level != null);
+    const c = revisable && byId(revisable.chapter_id);
+    if (c) return { chapter: c, reason: "gentle" };
+  }
+  if (weak.length > 0) {
+    const c = byId(weak[0].chapter_id);
+    if (c) return { chapter: c, reason: "weak" };
+  }
+  if (dueChapterIds.length > 0) {
+    const c = byId(dueChapterIds[0]);
+    if (c) return { chapter: c, reason: "due" };
+  }
+  const next = chapters.find((c) => c.status === "ongoing") ?? chapters.find((c) => c.status === "todo");
+  return next ? { chapter: next, reason: "next" } : null;
+}
 
 export function Dashboard({
   onOpenUe,
   onNavigate,
+  onQuickStart,
 }: {
   onOpenUe: (ue: Ue) => void;
   onNavigate: (v: ShellView) => void;
+  onQuickStart: (chapter: Chapter) => void;
 }) {
   const { ues, chapters, qcmScores, timerSessions, dueChapters, examDate } = useAppState();
   const { theme, toggle } = useTheme();
   const [, forceTick] = useState(0);
+  const [weak, setWeak] = useState<WeakChapter[]>([]);
 
   // re-render every minute so the countdown stays live without a full data refetch
   useEffect(() => {
@@ -23,10 +65,25 @@ export function Dashboard({
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    api.listWeakChapters().then(setWeak);
+  }, [dueChapters]);
+
   const totalDone = chapters.filter((c) => c.status === "done").length;
   const gAvg = avgScorePct(qcmScores);
   const cd = examDate ? countdownTo(examDate) : null;
   const dueToday = dueChapters.filter((d) => d.next_review_date <= new Date().toISOString().slice(0, 10));
+
+  const activityDates = [...timerSessions.map((s) => s.ended_at), ...qcmScores.map((s) => s.date)];
+  const streak = computeStudyStreak(activityDates);
+  const gapDays = daysSinceLastActivity(activityDates);
+  const quickStart = pickQuickStart(
+    chapters,
+    weak,
+    dueChapters.map((d) => d.chapter_id),
+    gapDays,
+  );
+  const quickStartUe = quickStart ? ues.find((u) => u.id === quickStart.chapter.ue_id) : null;
 
   return (
     <div style={{ padding: "18px 14px", maxWidth: 920, margin: "0 auto" }}>
@@ -46,6 +103,11 @@ export function Dashboard({
           </h1>
           <p style={{ fontSize: 11, color: "var(--muted)", margin: "4px 0 0", letterSpacing: 1.2, fontWeight: 700 }}>
             TABLEAU DE BORD
+            {streak > 0 && (
+              <span style={{ marginLeft: 10, color: "var(--accent-yellow)" }}>
+                · {streak} JOUR{streak > 1 ? "S" : ""} DE SUITE
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -64,6 +126,42 @@ export function Dashboard({
           {theme === "dark" ? "CLAIR" : "SOMBRE"}
         </button>
       </div>
+
+      {quickStart && quickStartUe && (
+        <button
+          onClick={() => onQuickStart(quickStart.chapter)}
+          style={{
+            width: "100%",
+            marginBottom: 16,
+            padding: "16px 18px",
+            textAlign: "left",
+            background: "var(--accent-blue)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 3,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.2, opacity: 0.85, marginBottom: 4 }}>
+              {REASON_LABEL[quickStart.reason]}
+            </div>
+            {quickStart.reason === "gentle" && (
+              <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
+                Ça fait {gapDays} jour{(gapDays ?? 0) > 1 ? "s" : ""} — pas de souci, on reprend en douceur.
+              </div>
+            )}
+            <div style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {quickStart.chapter.name}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>{quickStartUe.code} · {quickStartUe.name}</div>
+          </div>
+          <span style={{ fontSize: 22, fontWeight: 700, flexShrink: 0 }}>→</span>
+        </button>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatTile label="Chapitres complétés" value={`${totalDone}/${chapters.length}`} color="var(--accent-green)" />

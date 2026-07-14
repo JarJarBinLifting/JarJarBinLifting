@@ -33,6 +33,12 @@ type Phase =
   | "exercice"
   | "bilan";
 
+/** How long the user can go without a break before the break nudge appears.
+ * ADHD time blindness means people often don't notice an hour has passed —
+ * this is a suggestion, not an enforced pause, and resets whenever the user
+ * actually takes a break (nudge-triggered or the existing manual pause). */
+const BREAK_NUDGE_MS = 25 * 60 * 1000;
+
 const ALL_STAGES: { id: Phase; label: string }[] = [
   { id: "decouverte", label: "Découverte" },
   { id: "flashcards", label: "Mémorisation" },
@@ -76,6 +82,10 @@ export function TutorModal({
   const [paused, setPaused] = useState(false);
   const [progressHint, setProgressHint] = useState("");
   const [streak, setStreak] = useState(0);
+  const [showBreakNudge, setShowBreakNudge] = useState(false);
+  const lastBreakRef = useRef<number>(Date.now());
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [scratchpad, setScratchpad] = useState("");
 
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
   const [isRevision, setIsRevision] = useState(false);
@@ -104,6 +114,25 @@ export function TutorModal({
   const contentRef = useRef<unknown>(null); // fresh upload content, only set on a non-reused start
   const exerciceRef = useRef<{ exercice: Exercice; correction: ExoCorrection | null } | null>(null);
   const usageRef = useRef({ inputTokens: 0, outputTokens: 0 }); // synchronous mirror of `usage`, for reading the latest total inside async save calls
+
+  const inSession = !["checking", "resume-prompt", "revision-intro", "input", "loading", "bilan"].includes(phase);
+
+  const resetBreakClock = () => {
+    lastBreakRef.current = Date.now();
+    setShowBreakNudge(false);
+  };
+
+  // Polls every 30s rather than a single 25-min setTimeout so it survives
+  // phase changes and pause/resume without needing to be re-armed manually.
+  useEffect(() => {
+    if (!inSession) return;
+    const id = window.setInterval(() => {
+      if (!paused && Date.now() - lastBreakRef.current >= BREAK_NUDGE_MS) {
+        setShowBreakNudge(true);
+      }
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [inSession, paused]);
 
   // One listener per open tutor session — every genText/genJson/genChat call
   // anywhere in the tutor flow reports here (see llm.ts), so the running
@@ -531,7 +560,6 @@ export function TutorModal({
 
   const stages = isRevision ? ALL_STAGES.filter((s) => s.id !== "decouverte" && s.id !== "exercice") : ALL_STAGES;
   const currentStageIdx = stages.findIndex((s) => s.id === phase);
-  const inSession = !["checking", "resume-prompt", "revision-intro", "input", "loading", "bilan"].includes(phase);
 
   return (
     <div className={`tutor-modal${adhd ? " tutor-nofx" : ""}`}>
@@ -563,6 +591,38 @@ export function TutorModal({
                 {formatTokens(usage.inputTokens + usage.outputTokens)} jetons
               </span>
             )}
+          </div>
+        )}
+
+        {inSession && !paused && showBreakNudge && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              padding: "10px 14px",
+              marginBottom: 12,
+              background: "var(--t-acl)",
+              border: "1px solid var(--t-acc)",
+              borderRadius: 2,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--t-acc)", fontWeight: 600 }}>25 minutes sur cette session — une petite pause ?</span>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={() => { setPaused(true); resetBreakClock(); }}
+                style={{ background: "var(--t-acc)", color: "#fff", border: "none", borderRadius: 2, padding: "6px 10px", fontSize: 11, fontWeight: 700 }}
+              >
+                Faire une pause
+              </button>
+              <button
+                onClick={resetBreakClock}
+                style={{ background: "transparent", color: "var(--t-acc)", border: "1px solid var(--t-acc)", borderRadius: 2, padding: "6px 10px", fontSize: 11, fontWeight: 700 }}
+              >
+                Continuer
+              </button>
+            </div>
           </div>
         )}
 
@@ -622,7 +682,7 @@ export function TutorModal({
               <br />
               {progressHint || "Ta progression est gelée, rien n'est perdu."}
             </div>
-            <button className="tutor-bp" onClick={() => setPaused(false)} style={{ width: "100%" }}>
+            <button className="tutor-bp" onClick={() => { setPaused(false); resetBreakClock(); }} style={{ width: "100%" }}>
               Reprendre
             </button>
           </div>
@@ -691,6 +751,7 @@ export function TutorModal({
                 }}
                 schedule={schedule}
                 compteRendu={compteRenduText}
+                completedStages={stages.filter((s) => s.id !== "bilan").map((s) => s.label)}
                 onFinish={handleFinish}
               />
             )}
@@ -702,6 +763,55 @@ export function TutorModal({
         <button className="tutor-pause-fab" onClick={() => setPaused(true)}>
           Pause
         </button>
+      )}
+
+      {inSession && (
+        <>
+          <button
+            onClick={() => setNotesOpen((o) => !o)}
+            style={{
+              position: "fixed",
+              bottom: 16,
+              left: 16,
+              zIndex: 450,
+              padding: "9px 16px",
+              borderRadius: 2,
+              border: "1px solid var(--border)",
+              background: notesOpen ? "var(--t-pri)" : "var(--card)",
+              color: notesOpen ? "#fff" : "var(--muted)",
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+            }}
+          >
+            Notes{scratchpad.trim() ? " ·" : ""}
+          </button>
+          {notesOpen && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: 56,
+                left: 16,
+                zIndex: 450,
+                width: 260,
+                maxWidth: "calc(100vw - 32px)",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: 3,
+                padding: 12,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", letterSpacing: 1, marginBottom: 6 }}>NOTES DE SESSION</div>
+              <textarea
+                value={scratchpad}
+                onChange={(e) => setScratchpad(e.target.value)}
+                placeholder="Une pensée qui te distrait ? Note-la ici pour la garder sans perdre le fil."
+                rows={5}
+                style={{ width: "100%", resize: "vertical", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: 8, fontSize: 12, color: "var(--text)", fontFamily: "inherit" }}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
