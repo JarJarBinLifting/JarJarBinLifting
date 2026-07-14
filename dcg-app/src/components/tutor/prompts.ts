@@ -1,7 +1,7 @@
 export const ACT_TYPES: Record<string, { label: string; hint: string }> = {
-  prediction: { label: "🤔 À toi de prédire", hint: "Ce que je pense…" },
-  liaison: { label: "🔗 Fais le lien", hint: "Le lien que je vois…" },
-  contrefactuel: { label: "🔮 Et si… ?", hint: "Ce qui se passerait…" },
+  prediction: { label: "À toi de prédire", hint: "Ce que je pense…" },
+  liaison: { label: "Fais le lien", hint: "Le lien que je vois…" },
+  contrefactuel: { label: "Et si… ?", hint: "Ce qui se passerait…" },
 };
 
 export const KIND_TUTOR =

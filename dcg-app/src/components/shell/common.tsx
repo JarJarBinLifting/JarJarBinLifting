@@ -26,7 +26,7 @@ export function StatTile({ label, value, color }: { label: string; value: string
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)",
-        borderRadius: 16,
+        borderRadius: 3,
         padding: "14px 10px",
         textAlign: "center",
       }}
@@ -41,11 +41,8 @@ export function StatTile({ label, value, color }: { label: string; value: string
 
 export function ProgressBar({ pct, color, height = 6 }: { pct: number; color: string; height?: number }) {
   return (
-    <div style={{ background: "var(--track)", borderRadius: 99, height, overflow: "hidden" }}>
-      <div
-        className="pfill"
-        style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 99 }}
-      />
+    <div style={{ background: "var(--track)", borderRadius: 2, height, overflow: "hidden" }}>
+      <div className="pfill" style={{ width: `${pct}%`, height: "100%", background: color }} />
     </div>
   );
 }

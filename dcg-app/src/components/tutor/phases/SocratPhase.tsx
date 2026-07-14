@@ -116,7 +116,7 @@ export function SocratPhase({
                 if (e.key === "Enter" && inp.trim() && !loading) send(inp.trim());
               }}
               placeholder="Ta réponse…"
-              style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid var(--border)", fontSize: 12, color: "var(--text)", background: "var(--input)" }}
+              style={{ flex: 1, padding: "9px 12px", borderRadius: 2, border: "1px solid var(--border)", fontSize: 12, color: "var(--text)", background: "var(--input)" }}
             />
             <button className="tutor-bp" style={{ padding: "8px 14px", fontSize: 12 }} disabled={!inp.trim() || loading} onClick={() => send(inp.trim())}>
               OK

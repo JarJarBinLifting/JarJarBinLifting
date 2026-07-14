@@ -6,9 +6,9 @@ import type { Chapter, DueChapter } from "../../lib/types";
 import { Spin } from "./common";
 
 const OUTCOME_META: Record<string, { label: string; color: string }> = {
-  strong: { label: "💪 Solide", color: "var(--accent-green)" },
-  ok: { label: "🤔 Correct", color: "var(--accent-yellow)" },
-  weak: { label: "😕 Fragile", color: "var(--accent-red)" },
+  strong: { label: "Solide", color: "var(--accent-green)" },
+  ok: { label: "Correct", color: "var(--accent-yellow)" },
+  weak: { label: "Fragile", color: "var(--accent-red)" },
 };
 
 function DueRow({ d, onStudy }: { d: DueChapter; onStudy: (chapterId: number, ueId: number) => void }) {
@@ -21,7 +21,7 @@ function DueRow({ d, onStudy }: { d: DueChapter; onStudy: (chapterId: number, ue
         gap: 12,
         padding: "12px 14px",
         background: "var(--card2)",
-        borderRadius: 12,
+        borderRadius: 2,
         border: "1px solid var(--border)",
       }}
     >
@@ -35,7 +35,7 @@ function DueRow({ d, onStudy }: { d: DueChapter; onStudy: (chapterId: number, ue
       </div>
       <button
         onClick={() => onStudy(d.chapter_id, d.ue_id)}
-        style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+        style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "8px 12px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
       >
         Réviser →
       </button>
@@ -65,18 +65,18 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
 
   return (
     <div style={{ padding: 14, maxWidth: 920, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>📅 Agenda de révision</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>Agenda de révision</div>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
         Chaque chapitre revient automatiquement selon ta performance — pas de planning fixe à tenir à jour.
       </div>
 
-      <Section title={`🔴 À réviser aujourd'hui (${dueToday.length})`} empty="Rien de prévu aujourd'hui — bien joué.">
+      <Section title={`À réviser aujourd'hui (${dueToday.length})`} color="var(--accent-red)" empty="Rien de prévu aujourd'hui — bien joué.">
         {dueToday.map((d) => (
           <DueRow key={d.chapter_id} d={d} onStudy={handleStudy} />
         ))}
       </Section>
 
-      <Section title={`🟡 Cette semaine (${dueThisWeek.length})`} empty="Rien d'autre prévu cette semaine.">
+      <Section title={`Cette semaine (${dueThisWeek.length})`} color="var(--accent-yellow)" empty="Rien d'autre prévu cette semaine.">
         {dueThisWeek.map((d) => (
           <DueRow key={d.chapter_id} d={d} onStudy={handleStudy} />
         ))}
@@ -86,7 +86,7 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
         <Spin text="Chargement de l'agenda…" />
       ) : (
         later.length > 0 && (
-          <Section title={`🔵 Plus tard (${later.length})`} empty="">
+          <Section title={`Plus tard (${later.length})`} color="var(--accent-blue)" empty="">
             {later.map((d) => (
               <DueRow key={d.chapter_id} d={d} onStudy={handleStudy} />
             ))}
@@ -96,7 +96,7 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
 
       <button
         onClick={() => refreshAll()}
-        style={{ width: "100%", marginTop: 8, padding: 10, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 12, color: "var(--muted)" }}
+        style={{ width: "100%", marginTop: 8, padding: 10, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, fontSize: 12, color: "var(--muted)" }}
       >
         ↺ Rafraîchir
       </button>
@@ -104,11 +104,14 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
   );
 }
 
-function Section({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+function Section({ title, color, empty, children }: { title: string; color: string; empty: string; children: React.ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : !!children;
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>{title}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ width: 3, height: 13, background: color, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text)", letterSpacing: 0.6, textTransform: "uppercase" }}>{title}</span>
+      </div>
       {hasChildren ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
       ) : (

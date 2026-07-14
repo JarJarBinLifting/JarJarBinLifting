@@ -69,7 +69,7 @@ export function DecouvertePhase({
     try {
       const r = await genText(prompts.feedback(ueCode, actType, e.notion, e.explication), a, 600, model);
       setFeedbackText(r);
-      celebrate("💡");
+      celebrate("");
     } catch {
       setFeedbackText("Voyons le concept ensemble.");
     }
@@ -88,7 +88,7 @@ export function DecouvertePhase({
         model,
       );
       setReformAck(r);
-      celebrate("✍️");
+      celebrate("");
     } catch {
       setReformAck("Bonne reformulation, continue !");
     }
@@ -102,7 +102,7 @@ export function DecouvertePhase({
     try {
       const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300, model);
       setRecallFb(r);
-      celebrate("🔄");
+      celebrate("");
     } catch {
       setRecallFb("Bonne tentative ! La clé : " + recallE.a_retenir);
     }
@@ -124,7 +124,7 @@ export function DecouvertePhase({
   const handleConfidence = (v: 1 | 2 | 3) => {
     setConfidence(v);
     setConfidences((p) => [...p, { step, val: v, titre: e!.titre_court, notion: e!.notion }]);
-    if (v === 3) celebrate("💪");
+    if (v === 3) celebrate("");
   };
 
   const progressPct = step < 0 ? 0 : Math.min(100, ((step + 1) / total) * 100);
@@ -133,8 +133,8 @@ export function DecouvertePhase({
   return (
     <div className="tutor-card">
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-        <div style={{ flex: 1, background: "var(--track)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-          <div className="pfill" style={{ width: `${progressPct}%`, height: "100%", background: "var(--t-pri)", borderRadius: 4 }} />
+        <div style={{ flex: 1, background: "var(--track)", borderRadius: 2, height: 4, overflow: "hidden" }}>
+          <div className="pfill" style={{ width: `${progressPct}%`, height: "100%", background: "var(--t-pri)" }} />
         </div>
         <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
           {step < 0 ? "Intro" : sub === "epilogue" ? "Fin" : adhd ? `reste ${restants} concept${restants > 1 ? "s" : ""}` : `${step + 1}/${total}`}
@@ -154,8 +154,8 @@ export function DecouvertePhase({
               </>
             ) : null}
           </p>
-          <div style={{ background: "var(--t-prl)", borderRadius: 10, padding: 14, margin: "12px 0", fontSize: 13, lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--t-pri)" }}>🧠 Découverte active</strong>
+          <div style={{ background: "var(--t-prl)", borderRadius: 2, padding: 14, margin: "12px 0", fontSize: 13, lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--t-pri)" }}>Découverte active</strong>
             <br />À chaque étape, une activité différente : prédire, relier, imaginer l'inverse.
             {adhd ? " Un concept = ~2 min. Tu avances à ton rythme." : ""}
           </div>
@@ -176,7 +176,6 @@ export function DecouvertePhase({
         <div>
           <Consigne text="Réponds de mémoire, puis vérifie — même approximatif, ça compte" />
           <div className="tutor-recall-box">
-            <div style={{ fontSize: 24, marginBottom: 6 }}>🔄</div>
             <h4 style={{ margin: "0 0 10px", color: "var(--t-ok)", fontSize: 14 }}>Micro-rappel</h4>
             <p style={{ fontSize: 13, margin: "0 0 12px", lineHeight: 1.6 }}>
               {etapes[Math.max(0, step - RECALL_EVERY)]?.question_rappel || "Que retiens-tu du concept précédent ?"}
@@ -199,7 +198,6 @@ export function DecouvertePhase({
       {step >= 0 && sub === "recall_done" && (
         <div>
           <div className="tutor-recall-box">
-            <div style={{ fontSize: 24, marginBottom: 6 }}>🔄</div>
             <div className="tutor-feedback-box tutor-fb-good" style={{ textAlign: "left" }}>
               {recallFb}
             </div>
@@ -220,7 +218,7 @@ export function DecouvertePhase({
       {step >= 0 && e && sub === "context" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 100 }}>{step + 1}</span>
+            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 2, fontFamily: "var(--font-mono)" }}>{step + 1}</span>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--t-pri)" }}>{e.titre_court}</h3>
           </div>
           <Consigne text={inputMode === "choix" ? "Lis l'histoire, puis touche l'hypothèse qui te semble juste" : "Lis l'histoire, puis écris ta réponse — pas besoin d'être parfait"} />
@@ -229,8 +227,8 @@ export function DecouvertePhase({
             <div className="tutor-think-label">{act.label}</div>
             <p style={{ fontSize: 14, color: "var(--t-pri)", margin: "0 0 10px", lineHeight: 1.6, fontWeight: 500 }}>{e.question_activite}</p>
             <div className="tutor-mode-toggle">
-              <button className={inputMode === "choix" ? "on" : ""} onClick={() => setInputMode("choix")}>⚡ Je choisis</button>
-              <button className={inputMode === "texte" ? "on" : ""} onClick={() => setInputMode("texte")}>✍️ J'écris</button>
+              <button className={inputMode === "choix" ? "on" : ""} onClick={() => setInputMode("choix")}>Je choisis</button>
+              <button className={inputMode === "texte" ? "on" : ""} onClick={() => setInputMode("texte")}>J'écris</button>
             </div>
             {inputMode === "choix" && e.hypotheses?.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -267,10 +265,10 @@ export function DecouvertePhase({
       {step >= 0 && e && sub === "feedback" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 100 }}>{step + 1}</span>
+            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 2, fontFamily: "var(--font-mono)" }}>{step + 1}</span>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--t-pri)" }}>{e.titre_court}</h3>
           </div>
-          <div style={{ background: "var(--card2)", padding: 10, borderRadius: 6, fontSize: 13, color: "var(--muted)", marginBottom: 10, fontStyle: "italic" }}>
+          <div style={{ background: "var(--card2)", padding: 10, borderRadius: 2, fontSize: 13, color: "var(--muted)", marginBottom: 10, fontStyle: "italic" }}>
             Ta réponse : "{answer}"
           </div>
           {loading ? (
@@ -289,22 +287,22 @@ export function DecouvertePhase({
       {step >= 0 && e && sub === "reveal" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 100 }}>{step + 1}</span>
+            <span style={{ background: "var(--t-pri)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 2, fontFamily: "var(--font-mono)" }}>{step + 1}</span>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--t-pri)" }}>{e.titre_court}</h3>
           </div>
           <Consigne text="Lis, puis reformule en une phrase — comme si tu l'expliquais à un ami" />
           <div className="tutor-reveal-box">
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t-pri)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{e.notion}</div>
             <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 10px" }}>{e.explication}</p>
-            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)", padding: "8px 12px", background: "var(--t-okb)", borderRadius: 6, borderLeft: "3px solid var(--t-ok)" }}>
+            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)", padding: "8px 12px", background: "var(--t-okb)", borderRadius: 2, borderLeft: "3px solid var(--t-ok)" }}>
               <strong style={{ color: "var(--t-ok)", fontSize: 12 }}>Dans notre histoire :</strong>
               <br />
               {e.application}
             </div>
           </div>
-          <div className="tutor-key-box">💡 {e.a_retenir}</div>
+          <div className="tutor-key-box">À retenir — {e.a_retenir}</div>
           <div className="tutor-think-box" style={{ borderColor: "var(--t-acc)" }}>
-            <div className="tutor-think-label" style={{ color: "var(--t-acc)" }}>✍️ Reformule dans tes propres mots</div>
+            <div className="tutor-think-label" style={{ color: "var(--t-acc)" }}>Reformule dans tes propres mots</div>
             <textarea className="tutor-tf" value={reformText} onChange={(ev) => setReformText(ev.target.value)} placeholder="Avec mes mots, ce concept c'est… (une phrase courte suffit)" rows={2} />
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="tutor-bp" disabled={!reformText.trim() || loading} onClick={submitReform} style={{ flex: 2 }}>
@@ -321,10 +319,10 @@ export function DecouvertePhase({
       {step >= 0 && e && sub === "reform_ack" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <span style={{ background: "var(--t-ok)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 100 }}>✓</span>
+            <span style={{ background: "var(--t-ok)", color: "#fff", fontSize: 12, padding: "3px 10px", borderRadius: 2 }}>✓</span>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--t-pri)" }}>{e.titre_court}</h3>
           </div>
-          <div style={{ background: "var(--card2)", padding: 10, borderRadius: 6, fontSize: 13, color: "var(--muted)", marginBottom: 8, fontStyle: "italic" }}>
+          <div style={{ background: "var(--card2)", padding: 10, borderRadius: 2, fontSize: 13, color: "var(--muted)", marginBottom: 8, fontStyle: "italic" }}>
             Ta reformulation : "{reformText}"
           </div>
           {loading ? <TutorSpin text="…" /> : <div className="tutor-feedback-box tutor-fb-good">{reformAck}</div>}
@@ -342,9 +340,9 @@ export function DecouvertePhase({
           <p style={{ fontSize: 14, color: "var(--t-pri)", fontWeight: 600, margin: "0 0 14px" }}>Comment te sens-tu sur "{e.titre_court}" ?</p>
           <div className="tutor-conf-bar">
             {[
-              { v: 1 as const, label: "😕 Pas sûr" },
-              { v: 2 as const, label: "🤔 Je comprends" },
-              { v: 3 as const, label: "💪 Je maîtrise" },
+              { v: 1 as const, label: "Pas sûr" },
+              { v: 2 as const, label: "Je comprends" },
+              { v: 3 as const, label: "Je maîtrise" },
             ].map((o) => (
               <button key={o.v} className={`tutor-conf-btn${confidence === o.v ? " sel" : ""}`} onClick={() => handleConfidence(o.v)}>
                 {o.label}
@@ -361,7 +359,6 @@ export function DecouvertePhase({
 
       {sub === "epilogue" && (
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 36, marginBottom: 6 }}>📖</div>
           <h3 style={{ fontFamily: "var(--font-story)", fontSize: 17, color: "var(--t-pri)", marginBottom: 10 }}>Fin de l'histoire</h3>
           <div className="tutor-story-ctx" style={{ fontStyle: "normal", textAlign: "center", borderLeftColor: "var(--t-ok)" }}>{story.epilogue}</div>
           {confidences.length > 0 && (
@@ -373,18 +370,21 @@ export function DecouvertePhase({
                     key={i}
                     title={c.titre}
                     style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
+                      width: 22,
+                      height: 22,
+                      borderRadius: 2,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 12,
+                      fontFamily: "var(--font-mono)",
+                      fontWeight: 700,
                       background: c.val === 3 ? "var(--t-okb)" : c.val === 2 ? "var(--t-acl)" : "var(--t-erb)",
-                      border: `1.5px solid ${c.val === 3 ? "var(--t-ok)" : c.val === 2 ? "var(--t-acc)" : "var(--t-err)"}`,
+                      color: c.val === 3 ? "var(--t-ok)" : c.val === 2 ? "var(--t-acc)" : "var(--t-err)",
+                      border: `1px solid ${c.val === 3 ? "var(--t-ok)" : c.val === 2 ? "var(--t-acc)" : "var(--t-err)"}`,
                     }}
                   >
-                    {c.val === 3 ? "💪" : c.val === 2 ? "🤔" : "😕"}
+                    {c.val === 3 ? "+" : c.val === 2 ? "·" : "−"}
                   </div>
                 ))}
               </div>

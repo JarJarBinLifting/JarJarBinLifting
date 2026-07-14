@@ -16,7 +16,7 @@ function BreakTimer({ onDone }: { onDone: () => void }) {
     <div style={{ textAlign: "center", padding: "10px 0" }}>
       {left > 0 ? (
         <>
-          <div style={{ fontSize: 40, marginBottom: 6 }}>☕</div>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: "var(--t-acc)", marginBottom: 8 }}>PAUSE</div>
           <div style={{ fontSize: 32, fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--t-acc)" }}>
             {mm}:{ss}
           </div>
@@ -31,8 +31,8 @@ function BreakTimer({ onDone }: { onDone: () => void }) {
         </>
       ) : (
         <>
-          <div style={{ fontSize: 40, marginBottom: 6 }}>💪</div>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-ok)", margin: "0 0 12px" }}>Pause terminée — on reprend en douceur.</p>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: "var(--t-ok)", marginBottom: 8 }}>PAUSE TERMINÉE</div>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-ok)", margin: "0 0 12px" }}>On reprend en douceur.</p>
           <button className="tutor-bp" onClick={onDone}>
             C'est reparti →
           </button>
@@ -43,9 +43,8 @@ function BreakTimer({ onDone }: { onDone: () => void }) {
 }
 
 export interface TransitionSpec {
-  icon: string;
   title: string;
-  lines: { icon: string; text: string }[];
+  lines: string[];
   cta: string;
   loading?: boolean;
   loadingText?: string;
@@ -57,14 +56,13 @@ export function Transition({ spec, adhd, onContinue }: { spec: TransitionSpec; a
     <div className="tutor-card tutor-trans-box">
       {mode === "recap" ? (
         <>
-          <div style={{ fontSize: 44, marginBottom: 10 }}>{spec.icon}</div>
           <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-pri)", marginBottom: 6 }}>{spec.title}</h3>
           {spec.lines.length > 0 && (
             <div className="tutor-trans-recap">
               {spec.lines.map((l, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: i < spec.lines.length - 1 ? 6 : 0 }}>
-                  <span style={{ flexShrink: 0 }}>{l.icon}</span>
-                  <span>{l.text}</span>
+                  <span style={{ flexShrink: 0, color: "var(--t-pri)" }}>—</span>
+                  <span>{l}</span>
                 </div>
               ))}
             </div>
@@ -75,7 +73,7 @@ export function Transition({ spec, adhd, onContinue }: { spec: TransitionSpec; a
             <div style={{ display: "flex", gap: 8, flexDirection: adhd ? "column" : "row" }}>
               {adhd && (
                 <button className="tutor-bo" onClick={() => setMode("break")} style={{ width: "100%" }}>
-                  ☕ Pause de 2 min d'abord
+                  Pause de 2 min d'abord
                 </button>
               )}
               <button className="tutor-bp" onClick={onContinue} style={{ width: "100%" }}>

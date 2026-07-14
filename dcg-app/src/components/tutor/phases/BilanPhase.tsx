@@ -56,25 +56,24 @@ export function BilanPhase({
 
   return (
     <div className="tutor-card" style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 48, marginBottom: 8 }}>{pct >= 80 ? "🏆" : pct >= 60 ? "📚" : "💪"}</div>
       <h2 style={{ fontFamily: "var(--font-story)", fontSize: 20, color: "var(--t-pri)", marginBottom: 4 }}>{isRevision ? "Bilan de révision" : "Bilan de maîtrise"}</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>{storyTitle}</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10, marginBottom: 20 }}>
         {[
           ...(flashTotal ? [{ v: flashFails === 0 ? "✓" : `${flashFails}✗`, l: `Flashcards (${flashTotal})`, c: flashFails <= 2 ? "var(--t-ok)" : "var(--t-acc)" }] : []),
-          { v: `${qcmScore}/${qcmTotal}`, l: `QCM${adapted ? " ⬆" : ""} (${difficulty})`, c: pct >= 80 ? "var(--t-ok)" : pct >= 60 ? "var(--t-acc)" : "var(--t-err)" },
+          { v: `${qcmScore}/${qcmTotal}`, l: `QCM${adapted ? " (adapté)" : ""} (${difficulty})`, c: pct >= 80 ? "var(--t-ok)" : pct >= 60 ? "var(--t-acc)" : "var(--t-err)" },
           ...(exoTotal ? [{ v: `${exoScore}/${exoTotal}`, l: "Cas pratique", c: exoScore / exoTotal >= 0.6 ? "var(--t-ok)" : exoScore / exoTotal >= 0.4 ? "var(--t-acc)" : "var(--t-err)" }] : []),
           { v: `${pct}%`, l: "Maîtrise", c: lc },
         ].map((s, i) => (
-          <div key={i} style={{ background: "var(--card2)", padding: 14, borderRadius: 10, border: "1px solid var(--border)" }}>
+          <div key={i} style={{ background: "var(--card2)", padding: 14, borderRadius: 3, border: "1px solid var(--border)" }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: s.c, fontFamily: "var(--font-mono)" }}>{s.v}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.l}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ padding: 14, borderRadius: 10, borderLeft: `3px solid ${lc}`, textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
+      <div style={{ padding: 14, borderRadius: 2, borderLeft: `3px solid ${lc}`, textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
         <strong style={{ color: lc, fontSize: 14 }}>{level} maîtrise</strong>
         <p style={{ margin: "4px 0 0", fontSize: 13, lineHeight: 1.6 }}>
           {pct >= 80
@@ -86,46 +85,46 @@ export function BilanPhase({
       </div>
 
       {compteRendu && (
-        <div style={{ padding: 14, borderRadius: 10, borderLeft: "3px solid var(--t-pri)", textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
-          <strong style={{ color: "var(--t-pri)", fontSize: 13 }}>📝 Analyse de la session</strong>
+        <div style={{ padding: 14, borderRadius: 2, borderLeft: "3px solid var(--t-pri)", textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
+          <strong style={{ color: "var(--t-pri)", fontSize: 13 }}>Analyse de la session</strong>
           <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.65, color: "var(--text)" }}>{compteRendu}</p>
           <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--muted)" }}>Le tuteur relira cette note à ta prochaine révision de ce chapitre.</p>
         </div>
       )}
 
       {overconfident.length > 0 && (
-        <div style={{ padding: 12, borderRadius: 10, borderLeft: "3px solid var(--t-err)", textAlign: "left", marginBottom: 14, background: "var(--t-erb)" }}>
-          <strong style={{ color: "var(--t-err)", fontSize: 13 }}>⚠️ Attention à la surconfiance</strong>
+        <div style={{ padding: 12, borderRadius: 2, borderLeft: "3px solid var(--t-err)", textAlign: "left", marginBottom: 14, background: "var(--t-erb)" }}>
+          <strong style={{ color: "var(--t-err)", fontSize: 13 }}>Attention à la surconfiance</strong>
           <p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.6 }}>
-            Tu te sentais 💪 sur {overconfident.join(", ")} mais le QCM montre des erreurs sur ce{overconfident.length > 1 ? "s" : ""} thème
+            Tu te sentais sûr de toi sur {overconfident.join(", ")} mais le QCM montre des erreurs sur ce{overconfident.length > 1 ? "s" : ""} thème
             {overconfident.length > 1 ? "s" : ""}. C'est précieux à savoir : revois-le{overconfident.length > 1 ? "s" : ""} en priorité.
           </p>
         </div>
       )}
 
-      <div style={{ textAlign: "left", marginBottom: 16, background: "var(--t-prl)", borderRadius: 10, padding: 14, borderLeft: "3px solid var(--t-pri)" }}>
-        <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--t-pri)", marginBottom: 10 }}>📋 Ton plan de révision</h4>
+      <div style={{ textAlign: "left", marginBottom: 16, background: "var(--t-prl)", borderRadius: 2, padding: 14, borderLeft: "3px solid var(--t-pri)" }}>
+        <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--t-pri)", marginBottom: 10 }}>Ton plan de révision</h4>
         <div style={{ fontSize: 13, lineHeight: 1.8 }}>
           {toReview.length > 0 ? (
             <div style={{ marginBottom: 6 }}>
               <strong>À revoir en priorité :</strong>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4 }}>
                 {toReview.map((t) => (
-                  <span key={t} style={{ background: "var(--t-erb)", color: "var(--t-err)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>
+                  <span key={t} style={{ background: "var(--t-erb)", color: "var(--t-err)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-err)", borderRadius: 2, fontWeight: 600 }}>
                     {t}
                   </span>
                 ))}
               </div>
             </div>
           ) : (
-            <div style={{ marginBottom: 6 }}>Aucun point faible critique identifié 🎉</div>
+            <div style={{ marginBottom: 6 }}>Aucun point faible critique identifié.</div>
           )}
           {midConcepts.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               <strong>À consolider :</strong>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4 }}>
                 {midConcepts.map((t) => (
-                  <span key={t} style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>
+                  <span key={t} style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-acc)", borderRadius: 2, fontWeight: 600 }}>
                     {t}
                   </span>
                 ))}
@@ -146,7 +145,7 @@ export function BilanPhase({
 
       {adhd && (
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
-          Tu es allé au bout d'une session complète. Avec un TDAH, c'est loin d'être rien — sérieusement, bravo. 👏
+          Tu es allé au bout d'une session complète. Avec un TDAH, c'est loin d'être rien — sérieusement, bravo.
         </p>
       )}
 

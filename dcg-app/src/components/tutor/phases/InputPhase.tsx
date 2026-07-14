@@ -65,9 +65,9 @@ export function InputPhase({
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <input type="file" ref={fref} onChange={handleFile} accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" style={{ display: "none" }} />
         <button className="tutor-bo" onClick={() => fref.current?.click()}>
-          📎 Importer
+          Importer
         </button>
-        {fname && <span style={{ fontSize: 11, color: "var(--t-ok)", fontWeight: 500 }}>✓ {fname}</span>}
+        {fname && <span style={{ fontSize: 11, color: "var(--t-ok)", fontWeight: 500 }}>{fname}</span>}
       </div>
 
       <div style={{ marginTop: 16 }}>
@@ -75,7 +75,7 @@ export function InputPhase({
         <select
           value={diff}
           onChange={(e) => setDiff(e.target.value as Diff)}
-          style={{ width: "100%", marginTop: 4, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
+          style={{ width: "100%", marginTop: 4, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
         >
           {DIFFS.map((d) => (
             <option key={d}>{d}</option>
@@ -84,9 +84,8 @@ export function InputPhase({
       </div>
 
       <div className={`tutor-adhd-card${adhd ? " on" : ""}`} style={{ marginTop: 14 }} onClick={() => setAdhd(!adhd)}>
-        <span style={{ fontSize: 22, flexShrink: 0 }}>🧩</span>
         <div>
-          <strong style={{ fontSize: 13, color: adhd ? "var(--t-pri)" : "var(--text)" }}>Mode TDAH / concentration {adhd ? "— activé ✓" : ""}</strong>
+          <strong style={{ fontSize: 13, color: adhd ? "var(--t-pri)" : "var(--text)" }}>Mode TDAH / concentration {adhd ? "— activé" : ""}</strong>
           <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
             Micro-blocs avec pauses planifiées, une question à la fois, réponses par choix rapide, feedback immédiat, animations réduites, pause/reprise à tout moment.
           </p>

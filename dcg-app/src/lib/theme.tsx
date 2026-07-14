@@ -37,7 +37,7 @@ export function useTheme() {
 export const cardStyle = (extra: React.CSSProperties = {}): React.CSSProperties => ({
   background: "var(--card)",
   border: "1px solid var(--border)",
-  borderRadius: 16,
+  borderRadius: 3,
   padding: 20,
   ...extra,
 });
@@ -46,10 +46,11 @@ export const btnStyle = (color: string, extra: React.CSSProperties = {}): React.
   background: color,
   color: "#fff",
   border: "none",
-  borderRadius: 10,
+  borderRadius: 2,
   padding: "10px 18px",
-  fontSize: 14,
+  fontSize: 13,
   fontWeight: 600,
+  letterSpacing: 0.2,
   cursor: "pointer",
   ...extra,
 });
@@ -57,7 +58,7 @@ export const btnStyle = (color: string, extra: React.CSSProperties = {}): React.
 export const inputStyle = (extra: React.CSSProperties = {}): React.CSSProperties => ({
   background: "var(--input)",
   border: "1px solid var(--input-border)",
-  borderRadius: 10,
+  borderRadius: 2,
   padding: "10px 14px",
   color: "var(--text)",
   fontSize: 14,

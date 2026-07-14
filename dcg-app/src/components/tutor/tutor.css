@@ -26,8 +26,7 @@
 .tutor-card {
   background: var(--card);
   padding: 18px;
-  border-radius: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
   border: 1px solid var(--border);
   animation: fadeUp 0.35s ease both;
 }
@@ -37,14 +36,14 @@
   background: var(--t-pri);
   color: #fff;
   border: none;
-  border-radius: 10px;
-  font-size: 14px;
+  border-radius: 2px;
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.2px;
   cursor: pointer;
-  transition: transform 0.15s ease;
 }
 .tutor-bp:hover:not(:disabled) {
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--t-pri) 88%, black);
 }
 .tutor-bp:disabled {
   opacity: 0.4;
@@ -55,15 +54,15 @@
   padding: 7px 14px;
   background: transparent;
   color: var(--t-pri);
-  border: 1.5px solid var(--t-pri);
-  border-radius: 10px;
+  border: 1px solid var(--t-pri);
+  border-radius: 2px;
   font-size: 12px;
   cursor: pointer;
 }
 
 .tutor-bs {
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 2px;
   border: 1px solid var(--border);
   background: var(--card);
   cursor: pointer;
@@ -78,8 +77,8 @@
 .tutor-tf {
   width: 100%;
   padding: 10px;
-  border-radius: 6px;
-  border: 1.5px solid var(--border);
+  border-radius: 2px;
+  border: 1px solid var(--border);
   font-size: 13px;
   font-family: var(--font-body);
   resize: vertical;
@@ -95,7 +94,7 @@
 .tutor-cb {
   max-width: 85%;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 2px;
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -105,22 +104,19 @@
   align-self: flex-end;
   background: var(--t-pri);
   color: #fff;
-  border-bottom-right-radius: 3px;
 }
 .tutor-cb-a {
   align-self: flex-start;
   background: var(--card);
   color: var(--text);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 3px;
 }
 
 .tutor-fc {
   width: 100%;
   max-width: 440px;
   min-height: 180px;
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  border-radius: 3px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -128,18 +124,15 @@
   padding: 24px;
   cursor: pointer;
   position: relative;
-  transition: transform 0.2s ease;
-}
-.tutor-fc:hover {
-  transform: translateY(-2px);
+  transition: border-color 0.15s ease;
 }
 .tutor-fc-f {
   background: var(--card);
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
 }
 .tutor-fc-b {
   background: var(--t-prl);
-  border: 1.5px solid var(--t-pri);
+  border: 1px solid var(--t-pri);
 }
 
 .tutor-prg-track {
@@ -151,15 +144,16 @@
   flex-wrap: wrap;
 }
 .tutor-prg-dot {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  border: 2px solid var(--border);
+  font-family: var(--font-mono);
+  border: 1.5px solid var(--border);
   background: var(--card);
   color: var(--muted);
 }
@@ -172,13 +166,11 @@
   background: var(--t-pri);
   border-color: var(--t-pri);
   color: #fff;
-  transform: scale(1.1);
 }
 .tutor-prg-line {
   width: 16px;
-  height: 2px;
+  height: 1.5px;
   background: var(--border);
-  border-radius: 1px;
 }
 .tutor-prg-line.done {
   background: var(--t-ok);
@@ -192,34 +184,33 @@
   color: var(--text);
   padding: 16px 18px;
   background: var(--t-prl);
-  border-radius: 10px;
-  border-left: 4px solid var(--t-acc);
+  border-radius: 2px;
+  border-left: 3px solid var(--t-acc);
   margin-bottom: 14px;
 }
 
 .tutor-think-box {
   background: var(--t-prl);
-  border: 2px dashed var(--t-pri);
-  border-radius: 10px;
+  border: 1px dashed var(--t-pri);
+  border-radius: 2px;
   padding: 16px;
   margin: 14px 0;
 }
 .tutor-think-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--t-pri);
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   margin-bottom: 8px;
 }
 
 .tutor-feedback-box {
   padding: 14px 16px;
-  border-radius: 10px;
+  border-radius: 2px;
   margin: 12px 0;
   font-size: 13px;
   line-height: 1.65;
-  animation: fadeUp 0.3s ease;
 }
 .tutor-fb-good {
   background: var(--t-okb);
@@ -232,7 +223,7 @@
 
 .tutor-reveal-box {
   background: var(--t-prl);
-  border-radius: 10px;
+  border-radius: 2px;
   padding: 16px;
   margin: 12px 0;
   border-left: 3px solid var(--t-pri);
@@ -243,7 +234,7 @@
   color: var(--t-acc);
   padding: 10px 14px;
   background: var(--t-acl);
-  border-radius: 6px;
+  border-radius: 2px;
   text-align: center;
   margin: 12px 0;
 }
@@ -257,8 +248,8 @@
 }
 .tutor-conf-btn {
   padding: 8px 16px;
-  border-radius: 20px;
-  border: 1.5px solid var(--border);
+  border-radius: 2px;
+  border: 1px solid var(--border);
   background: var(--card);
   cursor: pointer;
   font-size: 12px;
@@ -272,8 +263,8 @@
 
 .tutor-recall-box {
   background: var(--t-okb);
-  border: 2px solid var(--t-ok);
-  border-radius: 10px;
+  border: 1px solid var(--t-ok);
+  border-radius: 2px;
   padding: 18px;
   margin: 14px 0;
   text-align: center;
@@ -285,7 +276,7 @@
 }
 .tutor-trans-recap {
   background: var(--card2);
-  border-radius: 10px;
+  border-radius: 2px;
   padding: 14px;
   margin: 14px 0;
   text-align: left;
@@ -296,7 +287,7 @@
 
 .tutor-corr-item {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 2px;
   margin-bottom: 8px;
   overflow: hidden;
   background: var(--card);
@@ -323,7 +314,7 @@
   color: var(--muted);
   background: var(--card2);
   border: 1px solid var(--border);
-  border-radius: 100px;
+  border-radius: 2px;
   padding: 5px 12px;
   margin: 0 auto 12px;
   width: fit-content;
@@ -333,8 +324,8 @@
 .tutor-hyp-btn {
   text-align: left;
   padding: 11px 14px;
-  border-radius: 10px;
-  border: 1.5px solid var(--border);
+  border-radius: 2px;
+  border: 1px solid var(--border);
   background: var(--card);
   cursor: pointer;
   font-size: 13px;
@@ -355,14 +346,14 @@
   display: flex;
   gap: 4px;
   background: var(--track);
-  border-radius: 100px;
+  border-radius: 2px;
   padding: 3px;
   width: fit-content;
   margin: 0 0 10px;
 }
 .tutor-mode-toggle button {
   padding: 5px 12px;
-  border-radius: 100px;
+  border-radius: 2px;
   border: none;
   background: transparent;
   font-size: 11px;
@@ -380,15 +371,14 @@
   bottom: 16px;
   right: 16px;
   z-index: 450;
-  padding: 10px 16px;
-  border-radius: 100px;
-  border: 1.5px solid var(--t-pri);
+  padding: 9px 16px;
+  border-radius: 2px;
+  border: 1px solid var(--t-pri);
   background: var(--card);
   color: var(--t-pri);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 .tutor-close-fab {
@@ -396,19 +386,19 @@
   top: 16px;
   right: 16px;
   z-index: 450;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: 2px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--muted);
-  font-size: 16px;
+  font-size: 15px;
   cursor: pointer;
 }
 
 .tutor-adhd-card {
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
   padding: 12px 14px;
   cursor: pointer;
   display: flex;

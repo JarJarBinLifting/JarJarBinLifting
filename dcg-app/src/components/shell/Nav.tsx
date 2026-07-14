@@ -1,10 +1,10 @@
 export type ShellView = "dash" | "ue" | "agenda" | "timer" | "settings";
 
-const ITEMS: { id: ShellView; label: string; icon: string }[] = [
-  { id: "dash", label: "Accueil", icon: "🏠" },
-  { id: "agenda", label: "Agenda", icon: "📅" },
-  { id: "timer", label: "Chrono", icon: "⏱" },
-  { id: "settings", label: "Réglages", icon: "⚙️" },
+const ITEMS: { id: ShellView; label: string }[] = [
+  { id: "dash", label: "Accueil" },
+  { id: "agenda", label: "Agenda" },
+  { id: "timer", label: "Chrono" },
+  { id: "settings", label: "Réglages" },
 ];
 
 export function Nav({ view, onNavigate }: { view: ShellView; onNavigate: (v: ShellView) => void }) {
@@ -21,7 +21,7 @@ export function Nav({ view, onNavigate }: { view: ShellView; onNavigate: (v: She
         zIndex: 100,
       }}
     >
-      {ITEMS.map(({ id, label, icon }) => {
+      {ITEMS.map(({ id, label }) => {
         const active = view === id || (id === "dash" && view === "ue");
         return (
           <button
@@ -31,16 +31,12 @@ export function Nav({ view, onNavigate }: { view: ShellView; onNavigate: (v: She
               flex: 1,
               background: "transparent",
               border: "none",
-              padding: "10px 0 7px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 3,
+              borderTop: `2px solid ${active ? "var(--accent-blue)" : "transparent"}`,
+              padding: "12px 0 10px",
               color: active ? "var(--accent-blue)" : "var(--muted)",
             }}
           >
-            <span style={{ fontSize: 22, lineHeight: 1 }}>{icon}</span>
-            <span style={{ fontSize: 9, fontWeight: active ? 800 : 500, letterSpacing: 1 }}>{label.toUpperCase()}</span>
+            <span style={{ fontSize: 10, fontWeight: active ? 800 : 600, letterSpacing: 1.2 }}>{label.toUpperCase()}</span>
           </button>
         );
       })}

@@ -58,7 +58,7 @@ export function Timer() {
 
   return (
     <div style={{ padding: 14, maxWidth: 600, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>⏱ Chronomètre de session</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>Chronomètre de session</div>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24 }}>Session DCG standard : 3 heures. Chaque minute compte !</div>
 
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
@@ -72,7 +72,6 @@ export function Timer() {
               fill="none"
               stroke={accent}
               strokeWidth="13"
-              strokeLinecap="round"
               strokeDasharray={circ}
               strokeDashoffset={circ - (pct / 100) * circ}
               style={{ transition: "stroke-dashoffset 1s linear" }}
@@ -81,7 +80,7 @@ export function Timer() {
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 34, fontWeight: 700, letterSpacing: -1, color: "var(--text)" }}>{fmtDuration(secsLeft)}</div>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.5, marginTop: 6, color: running ? "var(--accent-green)" : "var(--muted)" }}>
-              {running ? <span className="blk">● EN COURS</span> : secsLeft === max ? "● PRÊT" : "⏸ EN PAUSE"}
+              {running ? <span className="blk">EN COURS</span> : secsLeft === max ? "PRÊT" : "EN PAUSE"}
             </div>
             {ue && <div style={{ fontSize: 10, color: ue.color ?? undefined, fontWeight: 700, marginTop: 4 }}>{ue.code}</div>}
           </div>
@@ -93,7 +92,7 @@ export function Timer() {
         <select
           value={ueId}
           onChange={(e) => setUeId(e.target.value ? Number(e.target.value) : "")}
-          style={{ width: "100%", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
+          style={{ width: "100%", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
         >
           <option value="">— Sélectionner une UE —</option>
           {ues.map((u) => (
@@ -108,13 +107,13 @@ export function Timer() {
         <button
           onClick={() => setRunning((r) => !r)}
           disabled={!ueId}
-          style={{ flex: 1, fontSize: 15, padding: 14, fontWeight: 700, background: running ? "var(--accent-red)" : "var(--accent-green)", color: "#fff", border: "none", borderRadius: 10, opacity: !ueId ? 0.5 : 1 }}
+          style={{ flex: 1, fontSize: 14, padding: 14, fontWeight: 700, background: running ? "var(--accent-red)" : "var(--accent-green)", color: "#fff", border: "none", borderRadius: 2, opacity: !ueId ? 0.5 : 1 }}
         >
-          {running ? "⏸ Pause" : "▶ Démarrer"}
+          {running ? "Pause" : "Démarrer"}
         </button>
         <button
           onClick={reset}
-          style={{ padding: "14px 18px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 14, fontWeight: 600, color: "var(--text)" }}
+          style={{ padding: "14px 18px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, fontSize: 14, fontWeight: 600, color: "var(--text)" }}
         >
           ↺ Reset
         </button>
@@ -135,7 +134,7 @@ export function Timer() {
               style={{
                 background: max === s && secsLeft === s ? "color-mix(in srgb, var(--accent-blue) 15%, transparent)" : "transparent",
                 border: `1px solid ${max === s && secsLeft === s ? "var(--accent-blue)" : "var(--border)"}`,
-                borderRadius: 8,
+                borderRadius: 2,
                 padding: "8px 14px",
                 color: max === s && secsLeft === s ? "var(--accent-blue)" : "var(--muted)",
                 fontSize: 13,
@@ -149,14 +148,14 @@ export function Timer() {
       </div>
 
       {timerSessions.length > 0 && (
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 20 }}>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>📋 Sessions récentes</div>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 20 }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Sessions récentes</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {timerSessions.slice(0, 8).map((s) => {
               const su = ues.find((u) => u.id === s.ue_id);
               return (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "var(--card2)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: su?.color || "var(--muted)", flexShrink: 0 }} />
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "var(--card2)", borderRadius: 2, border: "1px solid var(--border)" }}>
+                  <div style={{ width: 9, height: 9, background: su?.color || "var(--muted)", flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{su?.name || "—"}</div>
                     <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{s.started_at.slice(0, 10)}</div>

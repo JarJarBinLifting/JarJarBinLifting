@@ -60,17 +60,17 @@ export function QCMPhase({
       <div className="tutor-card">
         <div style={{ textAlign: "center", marginBottom: 12 }}>
           <h3 style={{ fontFamily: "var(--font-story)", fontSize: 17, color: "var(--t-pri)", marginBottom: 4 }}>Vérification — QCM</h3>
-          <span style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>{difficulty}</span>
-          {adapted && <span style={{ background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600, marginLeft: 6 }}>⬆ adapté</span>}
+          <span style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-acc)", borderRadius: 2, fontWeight: 600 }}>{difficulty}</span>
+          {adapted && <span style={{ background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-ok)", borderRadius: 2, fontWeight: 600, marginLeft: 6 }}>adapté</span>}
         </div>
         <Consigne text="Une seule question à la fois — réponds, lis le feedback, avance" />
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
-          <div style={{ flex: 1, background: "var(--track)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-            <div className="pfill" style={{ width: `${((idx + (answered ? 1 : 0)) / qs.length) * 100}%`, height: "100%", background: "var(--t-pri)", borderRadius: 4 }} />
+          <div style={{ flex: 1, background: "var(--track)", borderRadius: 2, height: 4, overflow: "hidden" }}>
+            <div className="pfill" style={{ width: `${((idx + (answered ? 1 : 0)) / qs.length) * 100}%`, height: "100%", background: "var(--t-pri)" }} />
           </div>
           <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>reste {qs.length - idx - (answered ? 1 : 0)}</span>
         </div>
-        <div style={{ background: "var(--card2)", padding: 16, borderRadius: 10, border: "1px solid var(--border)" }}>
+        <div style={{ background: "var(--card2)", padding: 16, borderRadius: 3, border: "1px solid var(--border)" }}>
           <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 12, lineHeight: 1.6 }}>
             <span style={{ color: "var(--t-pri)", fontFamily: "var(--font-mono)", marginRight: 6 }}>{idx + 1}.</span>
             {q.question}
@@ -94,7 +94,7 @@ export function QCMPhase({
                   key={oi}
                   disabled={answered}
                   onClick={() => pick(oi)}
-                  style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, border: `1.5px solid ${bc}`, background: bg, color: cl, fontSize: 13, lineHeight: 1.5 }}
+                  style={{ textAlign: "left", padding: "11px 13px", borderRadius: 2, border: `1px solid ${bc}`, background: bg, color: cl, fontSize: 13, lineHeight: 1.5 }}
                 >
                   {o}
                 </button>
@@ -103,7 +103,7 @@ export function QCMPhase({
           </div>
           {answered && (
             <div className={`tutor-feedback-box ${sel === q.correct ? "tutor-fb-good" : "tutor-fb-partial"}`} style={{ marginBottom: 0 }}>
-              <strong>{sel === q.correct ? "✅ Exact !" : "💡 Pas celle-ci — et maintenant tu sais pourquoi :"}</strong>
+              <strong>{sel === q.correct ? "Exact !" : "Pas celle-ci — et maintenant tu sais pourquoi :"}</strong>
               <br />
               {q.explication}
             </div>
@@ -121,7 +121,6 @@ export function QCMPhase({
   if (adhd && done) {
     return (
       <div className="tutor-card" style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 44, marginBottom: 8 }}>{score >= 8 ? "🎉" : score >= 5 ? "📚" : "💪"}</div>
         <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-pri)", marginBottom: 8 }}>QCM terminé !</h3>
         <div style={{ fontSize: 30, fontWeight: 700, fontFamily: "var(--font-mono)", color: score >= 8 ? "var(--t-ok)" : score >= 5 ? "var(--t-acc)" : "var(--t-err)", marginBottom: 12 }}>
           {score}/{qs.length}
@@ -141,15 +140,15 @@ export function QCMPhase({
     <div className="tutor-card">
       <div style={{ textAlign: "center", marginBottom: 14 }}>
         <h3 style={{ fontFamily: "var(--font-story)", fontSize: 17, color: "var(--t-pri)", marginBottom: 4 }}>Vérification — QCM</h3>
-        <span style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>{difficulty}</span>
-        {adapted && <span style={{ background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600, marginLeft: 6 }}>⬆ difficulté adaptée</span>}
+        <span style={{ background: "var(--t-acl)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-acc)", borderRadius: 2, fontWeight: 600 }}>{difficulty}</span>
+        {adapted && <span style={{ background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-ok)", borderRadius: 2, fontWeight: 600, marginLeft: 6 }}>difficulté adaptée</span>}
       </div>
       {done && (
         <div
           style={{
             background: score >= 8 ? "var(--t-okb)" : score >= 5 ? "var(--t-acl)" : "var(--t-erb)",
             padding: "12px 16px",
-            borderRadius: 10,
+            borderRadius: 2,
             textAlign: "center",
             fontSize: 17,
             fontWeight: 600,
@@ -157,12 +156,12 @@ export function QCMPhase({
             color: score >= 8 ? "var(--t-ok)" : score >= 5 ? "var(--t-acc)" : "var(--t-err)",
           }}
         >
-          Score : {score}/{qs.length} {score >= 8 ? "🎉" : score >= 5 ? "📚" : "💪"}
+          Score : {score}/{qs.length}
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {qs.map((q, qi) => (
-          <div key={qi} style={{ background: "var(--card2)", padding: 13, borderRadius: 10, border: "1px solid var(--border)" }}>
+          <div key={qi} style={{ background: "var(--card2)", padding: 13, borderRadius: 3, border: "1px solid var(--border)" }}>
             <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, lineHeight: 1.55 }}>
               <span style={{ color: "var(--t-pri)", fontFamily: "var(--font-mono)", marginRight: 5 }}>{qi + 1}.</span>
               {q.question}
@@ -189,7 +188,7 @@ export function QCMPhase({
                     key={oi}
                     disabled={done}
                     onClick={() => setAns({ ...ans, [qi]: oi })}
-                    style={{ textAlign: "left", padding: "8px 11px", borderRadius: 6, border: `1.5px solid ${bc}`, background: bg, color: cl, fontSize: 13 }}
+                    style={{ textAlign: "left", padding: "8px 11px", borderRadius: 2, border: `1px solid ${bc}`, background: bg, color: cl, fontSize: 13 }}
                   >
                     {o}
                   </button>

@@ -33,13 +33,13 @@ type Phase =
   | "exercice"
   | "bilan";
 
-const ALL_STAGES: { id: Phase; icon: string; label: string }[] = [
-  { id: "decouverte", icon: "🧠", label: "Découverte" },
-  { id: "flashcards", icon: "🃏", label: "Mémorisation" },
-  { id: "qcm", icon: "✍️", label: "Vérification" },
-  { id: "socratique", icon: "🏛️", label: "Approfondissement" },
-  { id: "exercice", icon: "📝", label: "Application" },
-  { id: "bilan", icon: "🏆", label: "Bilan" },
+const ALL_STAGES: { id: Phase; label: string }[] = [
+  { id: "decouverte", label: "Découverte" },
+  { id: "flashcards", label: "Mémorisation" },
+  { id: "qcm", label: "Vérification" },
+  { id: "socratique", label: "Approfondissement" },
+  { id: "exercice", label: "Application" },
+  { id: "bilan", label: "Bilan" },
 ];
 
 function storyDigest(story: Story): string {
@@ -76,8 +76,6 @@ export function TutorModal({
   const [paused, setPaused] = useState(false);
   const [progressHint, setProgressHint] = useState("");
   const [streak, setStreak] = useState(0);
-  const [burst, setBurst] = useState<{ emoji: string; key: number } | null>(null);
-  const burstKey = useRef(0);
 
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
   const [isRevision, setIsRevision] = useState(false);
@@ -122,11 +120,8 @@ export function TutorModal({
     return () => setUsageListener(null);
   }, []);
 
-  const celebrate = (emoji: string) => {
+  const celebrate = (_emoji: string) => {
     setStreak((s) => s + 1);
-    burstKey.current += 1;
-    setBurst({ emoji, key: burstKey.current });
-    setTimeout(() => setBurst((b) => (b?.key === burstKey.current ? null : b)), 900);
   };
   const breakStreak = () => setStreak(0);
 
@@ -391,12 +386,11 @@ export function TutorModal({
     const strong = confs.filter((c) => c.val === 3).length;
     goToTransition(
       {
-        icon: "🃏",
         title: "Direction : Mémorisation",
         lines: [
-          { icon: "📖", text: `Tu as travaillé ${confs.length} concepts avec ${story?.personnage || "le personnage"}.` },
-          { icon: "💪", text: `${strong} maîtrisé${strong > 1 ? "s" : ""}, ${mid} compris, ${weak} incertain${weak > 1 ? "s" : ""}.` },
-          { icon: "🎯", text: weak > 0 ? "Les flashcards des concepts incertains arriveront en premier." : "Les flashcards vont ancrer tout ça en mémoire." },
+          `Tu as travaillé ${confs.length} concepts avec ${story?.personnage || "le personnage"}.`,
+          `${strong} maîtrisé${strong > 1 ? "s" : ""}, ${mid} compris, ${weak} incertain${weak > 1 ? "s" : ""}.`,
+          weak > 0 ? "Les flashcards des concepts incertains arriveront en premier." : "Les flashcards vont ancrer tout ça en mémoire.",
         ],
         cta: "Lancer les flashcards",
       },
@@ -413,12 +407,11 @@ export function TutorModal({
     setQcmAdapted(adapted);
     goToTransition(
       {
-        icon: "✍️",
         title: "Direction : Vérification",
         lines: [
-          { icon: "🃏", text: `${total} flashcards maîtrisées, ${fails} passage${fails > 1 ? "s" : ""} en révision.` },
-          { icon: adapted ? "⬆" : "🎯", text: adapted ? `Excellente mémorisation — le QCM passe en difficulté "${nextDiff}".` : `Le QCM (${nextDiff}) va vérifier ta compréhension.` },
-          ...(adhd ? [{ icon: "1️⃣", text: "Une question à la fois, feedback immédiat après chaque réponse." }] : []),
+          `${total} flashcards maîtrisées, ${fails} passage${fails > 1 ? "s" : ""} en révision.`,
+          adapted ? `Excellente mémorisation — le QCM passe en difficulté "${nextDiff}".` : `Le QCM (${nextDiff}) va vérifier ta compréhension.`,
+          ...(adhd ? ["Une question à la fois, feedback immédiat après chaque réponse."] : []),
         ],
         cta: "Lancer le QCM",
         loading: true,
@@ -454,12 +447,11 @@ export function TutorModal({
     const targets = [...new Set([...missedThemes, ...weakConcepts])];
     goToTransition(
       {
-        icon: "🏛️",
         title: "Direction : Approfondissement",
         lines: [
-          { icon: "✍️", text: `Score QCM : ${score}/${total}.` },
-          { icon: "🎯", text: targets.length ? `Le dialogue socratique va cibler : ${targets.slice(0, 4).join(", ")}${targets.length > 4 ? "…" : ""}.` : "Score parfait — le dialogue va pousser plus loin." },
-          ...(adhd ? [{ icon: "⚡", text: "2 échanges suffisent — court et intense." }] : []),
+          `Score QCM : ${score}/${total}.`,
+          targets.length ? `Le dialogue socratique va cibler : ${targets.slice(0, 4).join(", ")}${targets.length > 4 ? "…" : ""}.` : "Score parfait — le dialogue va pousser plus loin.",
+          ...(adhd ? ["2 échanges suffisent — court et intense."] : []),
         ],
         cta: "Lancer le dialogue",
       },
@@ -496,11 +488,10 @@ export function TutorModal({
 
     goToTransition(
       {
-        icon: "📝",
         title: "Direction : Application",
         lines: [
-          { icon: "🏢", text: story?.entreprise ? `Retour chez ${story.entreprise.split(",")[0]} — la situation a évolué.` : "Un cas pratique type annales t'attend." },
-          { icon: "✍️", text: adhd ? "Un dossier à la fois. Rédige ce que tu peux, même partiel — tout compte." : "Rédige tes réponses comme à l'examen, le tuteur corrigera chaque question." },
+          story?.entreprise ? `Retour chez ${story.entreprise.split(",")[0]} — la situation a évolué.` : "Un cas pratique type annales t'attend.",
+          adhd ? "Un dossier à la fois. Rédige ce que tu peux, même partiel — tout compte." : "Rédige tes réponses comme à l'examen, le tuteur corrigera chaque question.",
         ],
         cta: "Découvrir le sujet",
       },
@@ -544,11 +535,6 @@ export function TutorModal({
 
   return (
     <div className={`tutor-modal${adhd ? " tutor-nofx" : ""}`}>
-      {burst && (
-        <div key={burst.key} style={{ position: "fixed", top: 80, left: "50%", fontSize: 30, pointerEvents: "none", zIndex: 500, animation: "burst .9s ease forwards" }}>
-          {burst.emoji}
-        </div>
-      )}
       <button className="tutor-close-fab" onClick={handleClose} aria-label="Fermer">✕</button>
 
       <div className="tutor-body">
@@ -562,7 +548,7 @@ export function TutorModal({
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 {i > 0 && <div className={`tutor-prg-line${i <= currentStageIdx ? " done" : ""}`} />}
                 <div className={`tutor-prg-dot${i < currentStageIdx ? " done" : i === currentStageIdx ? " active" : ""}`} title={s.label}>
-                  {i < currentStageIdx ? "✓" : s.icon}
+                  {i < currentStageIdx ? "✓" : i + 1}
                 </div>
               </div>
             ))}
@@ -571,10 +557,10 @@ export function TutorModal({
         {inSession && !paused && progressHint && (
           <div style={{ textAlign: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{progressHint}</span>
-            {streak >= 2 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "var(--t-acc)" }}>🔥 {streak}</span>}
+            {streak >= 2 && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "var(--t-acc)", fontFamily: "var(--font-mono)" }}>SÉRIE {streak}</span>}
             {usage.inputTokens + usage.outputTokens > 0 && (
               <span style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", fontFamily: "var(--font-mono)" }} title="Jetons utilisés dans cette session">
-                🔢 {formatTokens(usage.inputTokens + usage.outputTokens)}
+                {formatTokens(usage.inputTokens + usage.outputTokens)} jetons
               </span>
             )}
           </div>
@@ -584,7 +570,6 @@ export function TutorModal({
 
         {phase === "resume-prompt" && inProgressSession && (
           <div className="tutor-card" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>⏸</div>
             <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-pri)", marginBottom: 8 }}>Session interrompue</h3>
             <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
               Une session sur ce chapitre a été laissée en cours, sans être terminée — probablement une fermeture inattendue. Rien
@@ -631,7 +616,6 @@ export function TutorModal({
 
         {paused ? (
           <div className="tutor-card" style={{ textAlign: "center", padding: 32 }}>
-            <div style={{ fontSize: 44, marginBottom: 10 }}>⏸</div>
             <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-pri)", marginBottom: 10 }}>Session en pause</h3>
             <div className="tutor-trans-recap" style={{ textAlign: "center" }}>
               <strong style={{ color: "var(--t-pri)" }}>Où tu en étais :</strong>
@@ -639,7 +623,7 @@ export function TutorModal({
               {progressHint || "Ta progression est gelée, rien n'est perdu."}
             </div>
             <button className="tutor-bp" onClick={() => setPaused(false)} style={{ width: "100%" }}>
-              ▶ Reprendre
+              Reprendre
             </button>
           </div>
         ) : (
@@ -716,7 +700,7 @@ export function TutorModal({
 
       {inSession && !paused && phase !== "transition" && (
         <button className="tutor-pause-fab" onClick={() => setPaused(true)}>
-          ⏸ Pause
+          Pause
         </button>
       )}
     </div>

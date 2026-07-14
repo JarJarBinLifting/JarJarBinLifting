@@ -23,7 +23,6 @@ export function TutorError({ message }: { message: string }) {
 export function Consigne({ text }: { text: string }) {
   return (
     <div className="tutor-consigne">
-      <span>👉</span>
       <span>{text}</span>
     </div>
   );

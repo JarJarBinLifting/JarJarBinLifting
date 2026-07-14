@@ -51,7 +51,23 @@ function MainApp() {
         fallback={(error, reset) => (
           <div className="tutor-modal" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div className="tutor-card" style={{ maxWidth: 420, textAlign: "center" }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  margin: "0 auto 14px",
+                  border: "1.5px solid var(--t-err)",
+                  color: "var(--t-err)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 800,
+                  fontSize: 18,
+                }}
+              >
+                !
+              </div>
               <h3 style={{ fontFamily: "var(--font-story)", fontSize: 18, color: "var(--t-err)", marginBottom: 8 }}>
                 La session a rencontré une erreur
               </h3>
@@ -117,7 +133,23 @@ export default function App() {
       {dbConfigured === false && (
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ maxWidth: 380, textAlign: "center" }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                margin: "0 auto 14px",
+                border: "1.5px solid var(--accent-red)",
+                color: "var(--accent-red)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 18,
+              }}
+            >
+              !
+            </div>
             <h1 style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
               Impossible de préparer la base de données
             </h1>
@@ -129,7 +161,7 @@ export default function App() {
             <button
               disabled={retrying}
               onClick={retry}
-              style={{ padding: "10px 20px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600 }}
+              style={{ padding: "10px 20px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, fontSize: 14, fontWeight: 600 }}
             >
               {retrying ? "Nouvelle tentative…" : "Réessayer"}
             </button>

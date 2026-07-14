@@ -119,13 +119,12 @@ export function FlashcardsPhase({
         <span style={{ fontSize: 13, fontWeight: 600, color: allDone ? "var(--t-ok)" : "var(--t-pri)", fontFamily: "var(--font-mono)" }}>
           {mastered}/{total}
         </span>
-        <div style={{ flex: 1, maxWidth: 200, background: "var(--track)", borderRadius: 4, height: 8, overflow: "hidden" }}>
-          <div className="pfill" style={{ width: `${(mastered / total) * 100}%`, height: "100%", background: allDone ? "var(--t-ok)" : "var(--t-pri)", borderRadius: 4 }} />
+        <div style={{ flex: 1, maxWidth: 200, background: "var(--track)", borderRadius: 2, height: 6, overflow: "hidden" }}>
+          <div className="pfill" style={{ width: `${(mastered / total) * 100}%`, height: "100%", background: allDone ? "var(--t-ok)" : "var(--t-pri)" }} />
         </div>
       </div>
       {allDone ? (
         <div style={{ textAlign: "center", padding: 20 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
           <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-ok)", marginBottom: 16 }}>Toutes maîtrisées !</p>
           <button className="tutor-bp" onClick={() => onDone(fails, total)}>
             Vérification →
@@ -150,14 +149,14 @@ export function FlashcardsPhase({
                 <button
                   disabled={busy}
                   onClick={() => advance(false)}
-                  style={{ padding: "9px 20px", borderRadius: 10, border: "1.5px solid var(--t-err)", background: "var(--t-erb)", color: "var(--t-err)", fontSize: 13, fontWeight: 600 }}
+                  style={{ padding: "9px 20px", borderRadius: 2, border: "1px solid var(--t-err)", background: "var(--t-erb)", color: "var(--t-err)", fontSize: 13, fontWeight: 600 }}
                 >
                   ✗ À revoir
                 </button>
                 <button
                   disabled={busy}
                   onClick={() => advance(true)}
-                  style={{ padding: "9px 20px", borderRadius: 10, border: "1.5px solid var(--t-ok)", background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 13, fontWeight: 600 }}
+                  style={{ padding: "9px 20px", borderRadius: 2, border: "1px solid var(--t-ok)", background: "var(--t-okb)", color: "var(--t-ok)", fontSize: 13, fontWeight: 600 }}
                 >
                   ✓ OK
                 </button>

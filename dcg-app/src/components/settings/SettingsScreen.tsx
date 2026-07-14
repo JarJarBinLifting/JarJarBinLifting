@@ -6,8 +6,8 @@ import type { ApiKeyStatus, LocalConfig, ModelUsageRow } from "../../lib/types";
 import { useAppState } from "../../state/AppState";
 
 const STORAGE_LABEL: Record<ApiKeyStatus["storage"], string> = {
-  keychain: "🔒 trousseau du système (recommandé)",
-  plaintext_fallback: "⚠️ fichier local non chiffré (aucun trousseau système détecté)",
+  keychain: "trousseau du système (recommandé)",
+  plaintext_fallback: "fichier local non chiffré (aucun trousseau système détecté)",
   none: "aucune clé enregistrée",
 };
 
@@ -26,30 +26,30 @@ export function SettingsScreen() {
 
   return (
     <div style={{ padding: 14, maxWidth: 640, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>⚙️ Réglages</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>Réglages</div>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>💾 Tes données</div>
+      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Tes données</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
           Tout est stocké localement dans un seul fichier SQLite, créé automatiquement au premier lancement.
         </p>
         {config?.db_path && (
-          <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)", background: "var(--card2)", padding: "8px 10px", borderRadius: 8, marginBottom: 12, wordBreak: "break-all" }}>
+          <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--muted)", background: "var(--card2)", padding: "8px 10px", borderRadius: 2, marginBottom: 12, wordBreak: "break-all" }}>
             {config.db_path}
           </div>
         )}
         <ExportButton />
       </section>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🔑 Clé API Anthropic</div>
+      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Clé API Anthropic</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
           Le tuteur IA a besoin d'une clé API Anthropic (console.anthropic.com), facturée à l'usage — ce n'est pas ton
           abonnement claude.ai, qui ne peut pas être connecté à une application tierce.
         </p>
         {keyStatus && (
           <div style={{ fontSize: 12, color: keyStatus.has_key ? "var(--accent-green)" : "var(--muted)", marginBottom: 10 }}>
-            {keyStatus.has_key ? `✓ Clé enregistrée — ${STORAGE_LABEL[keyStatus.storage]}` : "Aucune clé enregistrée."}
+            {keyStatus.has_key ? `Clé enregistrée — ${STORAGE_LABEL[keyStatus.storage]}` : "Aucune clé enregistrée."}
           </div>
         )}
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -58,7 +58,7 @@ export function SettingsScreen() {
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             placeholder="sk-ant-…"
-            style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 13 }}
+            style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "10px 14px", color: "var(--text)", fontSize: 13 }}
           />
           <button
             disabled={!keyInput.trim()}
@@ -68,7 +68,7 @@ export function SettingsScreen() {
               setKeyInput("");
               setTesting("idle");
             }}
-            style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+            style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, fontSize: 13, fontWeight: 600 }}
           >
             Enregistrer
           </button>
@@ -85,12 +85,12 @@ export function SettingsScreen() {
                 setTesting("fail");
               }
             }}
-            style={{ padding: "8px 14px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 12, color: "var(--text)" }}
+            style={{ padding: "8px 14px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, fontSize: 12, color: "var(--text)" }}
           >
             {testing === "running" ? "Test en cours…" : "Tester la connexion"}
           </button>
-          {testing === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Connexion OK</span>}
-          {testing === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>✗ Échec — vérifie la clé</span>}
+          {testing === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>Connexion OK</span>}
+          {testing === "fail" && <span style={{ fontSize: 12, color: "var(--accent-red)" }}>Échec — vérifie la clé</span>}
           {keyStatus?.has_key && (
             <button
               onClick={async () => {
@@ -127,11 +127,11 @@ function ExportButton() {
           a.click();
           setResult("ok");
         }}
-        style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
+        style={{ padding: "10px 16px", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, fontSize: 13, fontWeight: 600, color: "var(--text)" }}
       >
-        🗄️ Exporter une sauvegarde…
+        Exporter une sauvegarde…
       </button>
-      {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>✓ Téléchargement lancé</span>}
+      {result === "ok" && <span style={{ fontSize: 12, color: "var(--accent-green)" }}>Téléchargement lancé</span>}
     </div>
   );
 }
@@ -148,8 +148,8 @@ function UsageSection() {
   const total = (rows ?? []).reduce((s, r) => s + r.input_tokens + r.output_tokens, 0);
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>📊 Utilisation</div>
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Utilisation</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
         Jetons consommés par le tuteur, cumulés depuis le début — directement depuis les réponses de l'API, donc exacts.
         Pour convertir en coût réel, consulte les tarifs actuels sur console.anthropic.com/settings/pricing (ils changent
@@ -163,7 +163,7 @@ function UsageSection() {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
             {rows.map((r) => (
-              <div key={r.model} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--card2)", borderRadius: 8, fontSize: 12 }}>
+              <div key={r.model} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--card2)", borderRadius: 2, fontSize: 12 }}>
                 <span style={{ flex: 1, fontWeight: 600, color: "var(--text)" }}>{MODEL_LABEL[r.model] ?? r.model}</span>
                 <span style={{ color: "var(--muted)" }}>{r.session_count} session{r.session_count > 1 ? "s" : ""}</span>
                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)" }}>
@@ -184,8 +184,8 @@ function ModelSection() {
   const [saving, setSaving] = useState(false);
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>🤖 Modèle du tuteur</div>
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Modèle du tuteur</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
         Une session complète déclenche une dizaine d'appels au modèle (histoire, feedback, flashcards, QCM, dialogue,
         correction…) — le choix du modèle a un vrai impact sur le coût et la vitesse d'une session, pas seulement par appel.
@@ -199,8 +199,8 @@ function ModelSection() {
               alignItems: "flex-start",
               gap: 10,
               padding: "10px 12px",
-              borderRadius: 10,
-              border: `1.5px solid ${model === m.id ? "var(--accent-blue)" : "var(--border)"}`,
+              borderRadius: 2,
+              border: `1px solid ${model === m.id ? "var(--accent-blue)" : "var(--border)"}`,
               background: model === m.id ? "color-mix(in srgb, var(--accent-blue) 10%, var(--card))" : "transparent",
               cursor: saving ? "default" : "pointer",
             }}
@@ -233,20 +233,20 @@ function ExamDateSection() {
   const [draft, setDraft] = useState(examDate ?? "");
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>⏳ Date d'examen</div>
+    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Date d'examen</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>Affiche un compte à rebours sur le tableau de bord.</p>
       <div style={{ display: "flex", gap: 8 }}>
         <input
           type="date"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
+          style={{ flex: 1, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "10px 14px", color: "var(--text)", fontSize: 14 }}
         />
         <button
           disabled={!draft}
           onClick={() => setExamDate(draft)}
-          style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600 }}
+          style={{ padding: "10px 16px", background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, fontSize: 13, fontWeight: 600 }}
         >
           Enregistrer
         </button>

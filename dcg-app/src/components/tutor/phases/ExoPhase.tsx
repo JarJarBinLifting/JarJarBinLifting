@@ -79,7 +79,7 @@ export function ExoPhase({
       const c = await genJson<ExoCorrection>(prompts.corrJSON(ue, exText), `Ma copie:\n${student}`, 6000, model);
       setCorrection(c);
       onExercice(ex, c);
-      celebrate("📝");
+      celebrate("");
     } catch (e: any) {
       setCorrection({ error: e?.message ?? String(e) } as any);
     }
@@ -119,18 +119,18 @@ export function ExoPhase({
         <h3 style={{ fontFamily: "var(--font-story)", fontSize: 17, color: "var(--t-pri)" }}>Application — Cas pratique</h3>
       </div>
       {!correction && !ldC && <Consigne text={adhd ? "Un dossier à la fois — rédige ce que tu peux, même partiel" : "Rédige comme à l'examen — le tuteur corrigera chaque question"} />}
-      <div style={{ background: "var(--t-acl)", padding: 14, borderRadius: 10, borderLeft: "4px solid var(--t-acc)", marginBottom: 14 }}>
+      <div style={{ background: "var(--t-acl)", padding: 14, borderRadius: 3, borderLeft: "4px solid var(--t-acc)", marginBottom: 14 }}>
         <h4 style={{ margin: "0 0 5px", fontFamily: "var(--font-story)", fontSize: 16, color: "var(--t-acc)" }}>{ex.titre}</h4>
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{ex.contexte}</p>
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-          <span style={{ background: "var(--card)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>{ex.total_points} pts</span>
+          <span style={{ background: "var(--card)", color: "var(--t-acc)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-acc)", borderRadius: 2, fontWeight: 600 }}>{ex.total_points} pts</span>
         </div>
       </div>
 
       {adhd && !correction && !ldC && dossiers.length > 1 && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-          <div style={{ flex: 1, background: "var(--track)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-            <div className="pfill" style={{ width: `${((dossIdx + 1) / dossiers.length) * 100}%`, height: "100%", background: "var(--t-acc)", borderRadius: 4 }} />
+          <div style={{ flex: 1, background: "var(--track)", borderRadius: 2, height: 4, overflow: "hidden" }}>
+            <div className="pfill" style={{ width: `${((dossIdx + 1) / dossiers.length) * 100}%`, height: "100%", background: "var(--t-acc)" }} />
           </div>
           <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>dossier {dossIdx + 1}/{dossiers.length}</span>
         </div>
@@ -139,10 +139,10 @@ export function ExoPhase({
       {!correction &&
         !ldC &&
         visibleDossiers.map((d) => (
-          <div key={d.numero} style={{ background: "var(--card2)", padding: 14, borderRadius: 10, border: "1px solid var(--border)", marginBottom: 10 }}>
+          <div key={d.numero} style={{ background: "var(--card2)", padding: 14, borderRadius: 3, border: "1px solid var(--border)", marginBottom: 10 }}>
             <h4 style={{ margin: "0 0 10px", fontSize: 14, color: "var(--t-pri)" }}>
               Dossier {d.numero} — {d.titre}{" "}
-              <span style={{ background: "var(--t-prl)", color: "var(--t-pri)", fontSize: 11, padding: "2px 9px", borderRadius: 100, fontWeight: 600 }}>{d.points} pts</span>
+              <span style={{ background: "var(--t-prl)", color: "var(--t-pri)", fontSize: 11, padding: "2px 9px", border: "1px solid var(--t-pri)", borderRadius: 2, fontWeight: 600 }}>{d.points} pts</span>
             </h4>
             {d.questions.map((q) => (
               <div key={q.numero} style={{ marginBottom: 10 }}>
@@ -168,7 +168,7 @@ export function ExoPhase({
             className="tutor-bp"
             onClick={() => {
               setDossIdx(dossIdx + 1);
-              celebrate("📄");
+              celebrate("");
             }}
             style={{ width: "100%" }}
           >
@@ -192,7 +192,7 @@ export function ExoPhase({
             style={{
               background: notePct >= 60 ? "var(--t-okb)" : notePct >= 40 ? "var(--t-acl)" : "var(--t-erb)",
               padding: "14px 16px",
-              borderRadius: 10,
+              borderRadius: 2,
               textAlign: "center",
               marginBottom: 12,
             }}
@@ -218,7 +218,8 @@ export function ExoPhase({
                         color: good ? "var(--t-ok)" : mid ? "var(--t-acc)" : "var(--t-err)",
                         fontSize: 11,
                         padding: "2px 9px",
-                        borderRadius: 100,
+                        border: `1px solid ${good ? "var(--t-ok)" : mid ? "var(--t-acc)" : "var(--t-err)"}`,
+                        borderRadius: 2,
                         fontWeight: 600,
                       }}
                     >
@@ -230,7 +231,7 @@ export function ExoPhase({
                 {open && (
                   <div className="tutor-corr-body">
                     <p style={{ margin: "0 0 8px" }}>{c.evaluation}</p>
-                    <div style={{ background: "var(--t-prl)", padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid var(--t-pri)" }}>
+                    <div style={{ background: "var(--t-prl)", padding: "10px 12px", borderRadius: 2, borderLeft: "3px solid var(--t-pri)" }}>
                       <strong style={{ fontSize: 12, color: "var(--t-pri)" }}>Réponse attendue :</strong>
                       <br />
                       {c.reponse_attendue}
@@ -263,7 +264,7 @@ export function ExoPhase({
                   if (e.key === "Enter" && fu.trim() && !ldChat) ask(fu.trim());
                 }}
                 placeholder="Question sur la correction…"
-                style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid var(--border)", fontSize: 12, color: "var(--text)", background: "var(--input)" }}
+                style={{ flex: 1, padding: "9px 12px", borderRadius: 2, border: "1px solid var(--border)", fontSize: 12, color: "var(--text)", background: "var(--input)" }}
               />
               <button className="tutor-bp" style={{ padding: "8px 14px", fontSize: 12 }} disabled={!fu.trim() || ldChat} onClick={() => ask(fu.trim())}>
                 OK
