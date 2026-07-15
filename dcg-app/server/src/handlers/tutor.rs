@@ -2,7 +2,10 @@ use crate::appstate::{AppError, AppState};
 use crate::db::with_conn;
 use crate::handlers::planner::{row_to_qcm, set_chapter_status};
 use crate::handlers::scheduler::{self, SessionResult};
-use crate::models::{CompleteTutorSessionResult, DueChapter, DueFlashcard, DueFlashcardsResponse, FlashcardRow, ModelUsageRow, TutorSessionRow, WeakChapter};
+use crate::models::{
+    CompleteTutorSessionResult, DueChapter, DueFlashcard, DueFlashcardsResponse, DueQuizItem, DueQuizResponse, FlashcardRow, ModelUsageRow, QuizAnswerResult, TutorSessionRow,
+    WeakChapter,
+};
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use rusqlite::{params, Connection};
@@ -375,7 +378,9 @@ pub struct CompleteSessionRequest {
 /// `theme` and `explication` are LLM-generated and not guaranteed to be
 /// present even though the prompt asks for them (the frontend hedges the
 /// same way with `q.theme || "Général"`), so they must default rather than
-/// fail the parse.
+/// fail the parse. `options`/`correct` feed the quiz éclair bank and are
+/// only used when structurally sound (a real options array + an in-range
+/// correct index).
 #[derive(Debug, Deserialize, Default)]
 struct StoredQcmMiss {
     #[serde(default)]
@@ -384,6 +389,10 @@ struct StoredQcmMiss {
     theme: String,
     #[serde(default)]
     explication: String,
+    #[serde(default)]
+    options: Vec<serde_json::Value>,
+    #[serde(default)]
+    correct: Option<i64>,
 }
 
 /// A QCM miss is useful only if it comes back as a concrete future action.
@@ -404,7 +413,7 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
             continue;
         }
         let title = if miss.theme.trim().is_empty() {
-            miss.question
+            miss.question.clone()
         } else {
             format!("{} — {}", miss.theme, miss.question)
         };
@@ -437,8 +446,131 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
         if inserted == 1 && !explication.is_empty() {
             crate::handlers::planner::create_card_for_error_note(conn, conn.last_insert_rowid())?;
         }
+
+        // Feed the quiz éclair bank: the full question (options + correct
+        // index) so it can be re-asked as-is later. Only structurally sound
+        // entries qualify. Re-missing an already-banked question resets its
+        // schedule instead of duplicating it.
+        let correct_ok = miss.correct.is_some_and(|c| c >= 0 && (c as usize) < miss.options.len());
+        if miss.options.len() >= 2 && correct_ok {
+            conn.execute(
+                "INSERT INTO quiz_items (chapter_id, tutor_session_id, question, theme, options_json, correct, explication, next_review_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, date('now','localtime'))
+                 ON CONFLICT(chapter_id, question) DO UPDATE SET
+                    box_level = 0,
+                    correct_streak = 0,
+                    next_review_date = date('now','localtime'),
+                    updated_at = datetime('now')",
+                params![
+                    chapter_id,
+                    tutor_session_id,
+                    miss.question.trim(),
+                    if miss.theme.trim().is_empty() { None } else { Some(miss.theme.trim()) },
+                    serde_json::to_string(&miss.options).unwrap_or_else(|_| "[]".into()),
+                    miss.correct.unwrap_or(0),
+                    if explication.is_empty() { None } else { Some(explication) },
+                ],
+            )?;
+        }
     }
     Ok(())
+}
+
+/// Quiz questions are heavier than flashcards (read four options, commit to
+/// one), so the daily stack is smaller than the card deck's 20.
+const DAILY_QUIZ_LIMIT: i64 = 10;
+
+pub async fn list_due_quiz(State(state): State<AppState>) -> Result<Json<DueQuizResponse>, AppError> {
+    with_conn(&state.db, |conn| list_due_quiz_inner(conn))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn parse_options(raw: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<serde_json::Value>>(raw)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        })
+        .collect()
+}
+
+fn list_due_quiz_inner(conn: &Connection) -> rusqlite::Result<DueQuizResponse> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM quiz_items WHERE next_review_date <= date('now','localtime')",
+        [],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT q.id, q.chapter_id, c.name, u.code, u.color, q.question, q.theme, q.options_json
+         FROM quiz_items q
+         JOIN chapters c ON c.id = q.chapter_id
+         JOIN ues u ON u.id = c.ue_id
+         WHERE q.next_review_date <= date('now','localtime')
+         ORDER BY q.box_level ASC, q.next_review_date ASC, q.id ASC
+         LIMIT ?1",
+    )?;
+    let items = stmt
+        .query_map(params![DAILY_QUIZ_LIMIT], |row| {
+            Ok(DueQuizItem {
+                id: row.get(0)?,
+                chapter_id: row.get(1)?,
+                chapter_name: row.get(2)?,
+                ue_code: row.get(3)?,
+                ue_color: row.get(4)?,
+                question: row.get(5)?,
+                theme: row.get(6)?,
+                options: parse_options(&row.get::<_, String>(7)?),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(DueQuizResponse { total, items })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QuizAnswerRequest {
+    pub choice: i64,
+}
+
+/// Grades server-side (the correct index never leaves the database until the
+/// answer is committed) and reschedules through the same per-item Leitner
+/// logic the flashcards use.
+pub async fn answer_quiz_item(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<QuizAnswerRequest>) -> Result<Json<QuizAnswerResult>, AppError> {
+    with_conn(&state.db, |conn| answer_quiz_item_inner(conn, id, body.choice))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::Result<QuizAnswerResult> {
+    let (correct, explication, current_box): (i64, Option<String>, i64) = conn.query_row(
+        "SELECT correct, explication, box_level FROM quiz_items WHERE id = ?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let was_correct = choice == correct;
+    let today = chrono::Local::now().date_naive();
+    let (box_level, next_review_date) = scheduler::next_card_schedule(current_box, was_correct, today, read_exam_date(conn));
+
+    conn.execute(
+        "UPDATE quiz_items SET
+            box_level = ?1,
+            correct_streak = CASE WHEN ?2 THEN correct_streak + 1 ELSE 0 END,
+            next_review_date = ?3,
+            last_reviewed_at = datetime('now'),
+            updated_at = datetime('now')
+         WHERE id = ?4",
+        params![box_level, was_correct, next_review_date.to_string(), id],
+    )?;
+
+    Ok(QuizAnswerResult {
+        was_correct,
+        correct,
+        explication,
+        box_level,
+        next_review_date: next_review_date.to_string(),
+    })
 }
 
 /// The single write-back point from a finished tutor session into the
@@ -946,6 +1078,73 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(answer, "Le régime réel normal s'applique au-delà des seuils.");
         assert_eq!(box_level, 0);
+    }
+
+    // ── quiz éclair: bank capture + grading ──
+
+    #[test]
+    fn a_captured_miss_with_options_feeds_the_quiz_bank_and_a_remiss_resets_it() {
+        let conn = setup();
+        let raw = r#"[{"question":"Quel régime ?","theme":"TVA","explication":"Réel normal.","options":["A) micro","B) simplifié","C) réel normal","D) franchise"],"correct":2}]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+        let (count, correct): (i64, i64) = conn
+            .query_row("SELECT COUNT(*), MAX(correct) FROM quiz_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((count, correct), (1, 2));
+
+        // Let the item climb, then re-miss it in a later session: the bank
+        // must reset its schedule (box 0, due today), not grow a duplicate.
+        conn.execute("UPDATE quiz_items SET box_level = 3, next_review_date = date('now','localtime','+8 days')", []).unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        let second_session = conn.last_insert_rowid();
+        capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
+        let (count, box_level): (i64, i64) = conn
+            .query_row("SELECT COUNT(*), MAX(box_level) FROM quiz_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((count, box_level), (1, 0));
+    }
+
+    #[test]
+    fn structurally_broken_misses_stay_out_of_the_quiz_bank() {
+        let conn = setup();
+        // No options at all; a single option; correct index out of range.
+        let raw = r#"[
+            {"question": "Sans options", "correct": 0},
+            {"question": "Une seule option", "options": ["A"], "correct": 0},
+            {"question": "Index hors limites", "options": ["A","B"], "correct": 5}
+        ]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM quiz_items", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        // They still became error notes — the notebook is more lenient than
+        // the quiz bank on purpose.
+        assert_eq!(error_note_count(&conn), 3);
+    }
+
+    #[test]
+    fn answering_a_quiz_item_grades_server_side_and_reschedules() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO quiz_items (chapter_id, question, options_json, correct, explication, next_review_date)
+             VALUES (1, 'Q', '[\"A\",\"B\",\"C\"]', 1, 'Parce que B.', date('now','localtime'))",
+            [],
+        )
+        .unwrap();
+
+        let wrong = answer_quiz_item_inner(&conn, 1, 2).unwrap();
+        assert!(!wrong.was_correct);
+        assert_eq!(wrong.correct, 1);
+        assert_eq!(wrong.explication.as_deref(), Some("Parce que B."));
+        assert_eq!(wrong.box_level, 0);
+        assert_eq!(wrong.next_review_date, local_date_plus(1));
+
+        let right = answer_quiz_item_inner(&conn, 1, 1).unwrap();
+        assert!(right.was_correct);
+        assert_eq!(right.box_level, 1);
+        assert_eq!(right.next_review_date, local_date_plus(2));
+
+        let deck = list_due_quiz_inner(&conn).unwrap();
+        assert_eq!(deck.total, 0); // rescheduled out of today
     }
 
     #[test]

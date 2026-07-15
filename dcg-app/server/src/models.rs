@@ -105,6 +105,60 @@ pub struct DueFlashcardsResponse {
     pub cards: Vec<DueFlashcard>,
 }
 
+/// One question in the daily "quiz éclair": a previously-missed QCM question
+/// re-asked with its original options. The correct index deliberately stays
+/// server-side — answers are checked by the answer endpoint, one source of
+/// truth for grading and scheduling.
+#[derive(Debug, Serialize, Clone)]
+pub struct DueQuizItem {
+    pub id: i64,
+    pub chapter_id: i64,
+    pub chapter_name: String,
+    pub ue_code: String,
+    pub ue_color: Option<String>,
+    pub question: String,
+    pub theme: Option<String>,
+    pub options: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DueQuizResponse {
+    pub total: i64,
+    pub items: Vec<DueQuizItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QuizAnswerResult {
+    pub was_correct: bool,
+    pub correct: i64,
+    pub explication: Option<String>,
+    pub box_level: i64,
+    pub next_review_date: String,
+}
+
+/// One timed training run on a real past exam paper (annale).
+#[derive(Debug, Serialize, Clone)]
+pub struct AnnaleAttempt {
+    pub id: i64,
+    pub ue_id: i64,
+    pub ue_code: String,
+    pub ue_name: String,
+    pub ue_color: Option<String>,
+    pub chapter_id: Option<i64>,
+    pub title: String,
+    pub subject_text: String,
+    pub corrige_text: Option<String>,
+    pub duration_minutes: i64,
+    pub exercice_json: Option<String>,
+    pub answers_json: Option<String>,
+    pub correction_json: Option<String>,
+    pub score: Option<f64>,
+    pub total: Option<f64>,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct DueChapter {
     pub chapter_id: i64,

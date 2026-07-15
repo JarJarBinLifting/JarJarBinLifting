@@ -35,6 +35,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "flashcard review schedule",
         include_str!("../../migrations/0007_flashcard_review.sql"),
     ),
+    (
+        8,
+        "quiz bank and annales",
+        include_str!("../../migrations/0008_quiz_and_annales.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;

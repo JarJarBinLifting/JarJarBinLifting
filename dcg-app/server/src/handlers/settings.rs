@@ -15,7 +15,7 @@ fn app_config_dir() -> Result<PathBuf, String> {
     Ok(base.join(APP_ID))
 }
 
-fn app_data_dir() -> Result<PathBuf, String> {
+pub(crate) fn app_data_dir() -> Result<PathBuf, String> {
     let base = dirs::data_dir().ok_or("Impossible de localiser le dossier de données de l'OS")?;
     Ok(base.join(APP_ID))
 }
@@ -41,7 +41,7 @@ fn config_file() -> Result<PathBuf, String> {
     Ok(dir.join("config.json"))
 }
 
-fn read_local_config() -> LocalConfig {
+pub(crate) fn read_local_config() -> LocalConfig {
     let path = match config_file() {
         Ok(p) => p,
         Err(_) => return LocalConfig::default(),

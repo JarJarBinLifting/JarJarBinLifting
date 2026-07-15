@@ -78,6 +78,20 @@ fn api_router() -> Router<AppState> {
         .route("/tutor/sessions/:id/abandon", post(handlers::tutor::abandon_tutor_session))
         .route("/tutor/chapters/:chapter_id/flashcards", get(handlers::tutor::list_flashcards).post(handlers::tutor::save_flashcards))
         .route("/tutor/flashcards/due", get(handlers::tutor::list_due_flashcards))
+        .route("/tutor/quiz/due", get(handlers::tutor::list_due_quiz))
+        .route("/tutor/quiz/:id/answer", post(handlers::tutor::answer_quiz_item))
+        // annale training
+        .route("/annales", get(handlers::annales::list_attempts).post(handlers::annales::start_attempt))
+        .route("/annales/:id", patch(handlers::annales::patch_attempt).delete(handlers::annales::delete_attempt))
+        .route("/annales/:id/complete", post(handlers::annales::complete_attempt))
+        .route("/annales/:id/abandon", post(handlers::annales::abandon_attempt))
+        // backups
+        .route("/settings/backups", get(handlers::backups::list_backups).post(handlers::backups::backup_now))
+        .route("/settings/backups/restore", post(handlers::backups::restore_backup))
+        .route(
+            "/settings/backups/restore-upload",
+            post(handlers::backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024)),
+        )
         .route("/tutor/flashcards/:id/progress", post(handlers::tutor::update_flashcard_progress))
         .route("/tutor/sessions/:id/complete", post(handlers::tutor::complete_tutor_session))
         .route("/tutor/due-chapters", get(handlers::tutor::list_due_chapters))
@@ -118,6 +132,10 @@ async fn main() {
         if let Err(e) = handlers::planner::seed_default_curriculum(&state) {
             tracing::error!("failed to seed default curriculum: {e}");
         }
+        // First automatic snapshot of the day (rotating, keeps the last 7) —
+        // after migrations/seeding so the backup reflects a healthy, current
+        // database. Never fatal.
+        handlers::backups::run_auto_backup_if_due(&state);
     }
 
     let app = Router::new()

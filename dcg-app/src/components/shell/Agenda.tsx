@@ -3,6 +3,7 @@ import { useAppState } from "../../state/AppState";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
 import type { Chapter, DueChapter, WeakChapter } from "../../lib/types";
+import { QuickQuiz } from "./QuickQuiz";
 import { QuickReview } from "./QuickReview";
 import { Spin } from "./common";
 
@@ -86,8 +87,9 @@ function WeakRow({ w, onStudy }: { w: WeakChapter; onStudy: (chapterId: number, 
 }
 
 export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) => void }) {
-  const { chapters, dueChapters, dueFlashcards, refreshAll } = useAppState();
+  const { chapters, dueChapters, dueFlashcards, dueQuiz, refreshAll } = useAppState();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<DueChapter[] | null>(null);
   const [weak, setWeak] = useState<WeakChapter[] | null>(null);
 
@@ -134,6 +136,24 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
         </button>
       )}
 
+      {dueQuiz.total > 0 && (
+        <button
+          className="agenda-row surface"
+          onClick={() => setQuizOpen(true)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-cyan)", padding: "13px 15px", marginBottom: 20, color: "var(--text)" }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "var(--accent-cyan)", textTransform: "uppercase", marginBottom: 3 }}>
+              Quiz éclair · sans IA
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>
+              {dueQuiz.total} question{dueQuiz.total > 1 ? "s" : ""} déjà ratée{dueQuiz.total > 1 ? "s" : ""} à reprendre
+            </div>
+          </div>
+          <span style={{ color: "var(--accent-blue)", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>Lancer →</span>
+        </button>
+      )}
+
       {weakest.length > 0 && (
         <Section title={`Points faibles (${weak?.length ?? 0})`} color="var(--accent-purple)" empty="">
           {weakest.map((w) => (
@@ -174,6 +194,16 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
         ↺ Rafraîchir
       </button>
 
+      {quizOpen && (
+        <QuickQuiz
+          items={dueQuiz.items}
+          total={dueQuiz.total}
+          onClose={() => {
+            setQuizOpen(false);
+            refreshAll();
+          }}
+        />
+      )}
       {reviewOpen && (
         <QuickReview
           cards={dueFlashcards.cards}

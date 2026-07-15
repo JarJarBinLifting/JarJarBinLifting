@@ -2,8 +2,12 @@ import type {
   ApiKeyStatus,
   Chapter,
   CompleteTutorSessionResult,
+  AnnaleAttempt,
+  BackupInfo,
   DueChapter,
   DueFlashcardsResponse,
+  DueQuizResponse,
+  QuizAnswerResult,
   ErrorNote,
   ErrorSource,
   ErrorType,
@@ -220,6 +224,46 @@ export const saveFlashcards = (
 export const updateFlashcardProgress = (id: number, correct: boolean) =>
   post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, { correct });
 export const listDueFlashcards = () => get<DueFlashcardsResponse>("/tutor/flashcards/due");
+
+// ─── quiz éclair ───
+export const listDueQuiz = () => get<DueQuizResponse>("/tutor/quiz/due");
+export const answerQuizItem = (id: number, choice: number) => post<QuizAnswerResult>(`/tutor/quiz/${id}/answer`, { choice });
+
+// ─── annale training ───
+export const listAnnales = () => get<AnnaleAttempt[]>("/annales");
+export const startAnnale = (body: {
+  ue_id: number;
+  chapter_id: number | null;
+  title: string;
+  subject_text: string;
+  corrige_text: string | null;
+  duration_minutes: number;
+}) => post<AnnaleAttempt>("/annales", body);
+export const patchAnnale = (id: number, body: { exercice_json?: string; answers_json?: string }) =>
+  patch<AnnaleAttempt>(`/annales/${id}`, body);
+export const completeAnnale = (id: number, correctionJson: string, elapsedSeconds: number) =>
+  post<AnnaleAttempt>(`/annales/${id}/complete`, { correction_json: correctionJson, elapsed_seconds: elapsedSeconds });
+export const abandonAnnale = (id: number) => post<void>(`/annales/${id}/abandon`);
+export const deleteAnnale = (id: number) => del<void>(`/annales/${id}`);
+
+// ─── backups ───
+export const listBackups = () => get<BackupInfo[]>("/settings/backups");
+export const backupNow = () => post<BackupInfo[]>("/settings/backups");
+export const restoreBackup = (fileName: string) => post<void>("/settings/backups/restore", { file_name: fileName });
+/** Raw-body upload: the file IS the request body (a SQLite database). */
+export async function restoreUpload(file: File): Promise<void> {
+  const res = await fetch("/api/settings/backups/restore-upload", { method: "POST", body: file });
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(message);
+  }
+}
 
 export const completeTutorSession = (
   tutorSessionId: number,

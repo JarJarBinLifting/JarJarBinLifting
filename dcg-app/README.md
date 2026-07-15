@@ -88,3 +88,24 @@ backup, since everything lives in that one local file.
   the error notebook (a note's title/correction becomes a card
   automatically). The whole flow costs zero API calls — cards already
   exist in the database.
+- **Quiz éclair** (`src/components/shell/QuickQuiz.tsx`): the same daily
+  loop but with real QCM questions you previously missed — every generated
+  QCM's misses are banked (`quiz_items`, options + correct answer +
+  explication) and re-asked on their own schedule, capped at 10/day.
+  Graded server-side, zero API calls. Re-missing a banked question in a
+  later session resets its schedule instead of duplicating it.
+- **Annales chronométrées** (`src/components/shell/AnnaleModal.tsx`, from
+  the Pilotage screen): paste a real past exam paper, the model structures
+  it into dossiers/questions with a barème (one call), then work it against
+  a visible countdown — answers autosave as drafts, so closing mid-attempt
+  resumes. Submitting triggers a barème-based correction (one call,
+  optionally guided by a pasted official corrigé). Weak answers (< 50% of
+  the barème) flow into the error notebook with source `annale`, and the
+  working time is logged as a study session.
+- **Automatic backups** (`server/src/handlers/backups.rs`): one consistent
+  snapshot per day at startup (SQLite online backup API, last 7 kept,
+  rotating) plus on-demand snapshots and restore from Settings — restoring
+  first safety-snapshots the current database, validates the candidate
+  file (integrity check + migration version), and rolls back if the
+  restored file can't be opened. Restore also accepts an uploaded file
+  (e.g. a manual export from Downloads).

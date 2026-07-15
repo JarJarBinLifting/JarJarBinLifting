@@ -1,8 +1,9 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
 import { useAppState } from "../../state/AppState";
-import type { ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
+import type { AnnaleAttempt, ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
+import { AnnaleModal } from "./AnnaleModal";
 
 const SKILLS: { id: ExamSkill; label: string; description: string }[] = [
   { id: "recall", label: "Restitution", description: "Retrouver une règle, formule ou définition sans support." },
@@ -47,7 +48,13 @@ export function Pilotage() {
     source: "annale" as "manual" | "annale",
   });
   const [skillDrafts, setSkillDrafts] = useState<Record<string, number>>({});
+  const [annales, setAnnales] = useState<AnnaleAttempt[]>([]);
+  const [annaleOpen, setAnnaleOpen] = useState<{ resume: AnnaleAttempt | null } | null>(null);
   const [scenarioDrafts, setScenarioDrafts] = useState<Record<number, { current: string; target: string }>>({});
+
+  useEffect(() => {
+    api.listAnnales().then(setAnnales);
+  }, []);
 
   const activeErrors = errorNotes.filter((e) => e.status === "active");
   const dueErrors = activeErrors.filter((e) => e.next_review_date <= todayIso());
@@ -203,6 +210,45 @@ export function Pilotage() {
         </div>
       </section>
 
+      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Annales chronométrées</div>
+            <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Colle un sujet réel, travaille contre la montre, sois corrigé au barème.</p>
+          </div>
+          <button onClick={() => setAnnaleOpen({ resume: null })} style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "9px 12px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+            + Nouvelle annale
+          </button>
+        </div>
+        {annales.length === 0 ? (
+          <div style={{ color: "var(--muted)", fontSize: 13, padding: "6px 0" }}>Aucun entraînement pour l'instant — les annales des sessions précédentes sont le meilleur prédicteur de ta note.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {annales.slice(0, 6).map((a) => (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--card2)", border: "1px solid var(--border)", borderLeft: `3px solid ${a.ue_color ?? "var(--border)"}`, borderRadius: 2, padding: "10px 11px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: a.ue_color ?? "var(--muted)", marginBottom: 2 }}>
+                    {a.ue_code} · {a.duration_minutes} MIN · {a.status === "in_progress" ? "EN COURS" : a.status === "completed" ? "CORRIGÉE" : "ABANDONNÉE"}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
+                </div>
+                {a.status === "completed" && a.score !== null && (
+                  <b style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: a.total && a.score >= a.total / 2 ? "var(--accent-green)" : "var(--accent-red)", flexShrink: 0 }}>
+                    {a.score}/{a.total}
+                  </b>
+                )}
+                <button
+                  onClick={() => setAnnaleOpen({ resume: a })}
+                  style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "8px 10px", fontSize: 10, fontWeight: 800, flexShrink: 0 }}
+                >
+                  {a.status === "in_progress" ? "Reprendre →" : "Revoir →"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
           <div><div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Carnet d'erreurs</div><p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>{activeErrors.length} erreur{activeErrors.length > 1 ? "s" : ""} active{activeErrors.length > 1 ? "s" : ""} · {errorNotes.filter((e) => e.status === "mastered").length} maîtrisée{errorNotes.filter((e) => e.status === "mastered").length > 1 ? "s" : ""}</p></div>
@@ -227,6 +273,17 @@ export function Pilotage() {
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}><button onClick={() => setFormOpen(false)} style={{ ...buttonSecondary, flex: 1 }}>Annuler</button><button onClick={saveError} disabled={saving || !errorForm.title.trim()} style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: 11, fontWeight: 700, flex: 1 }}>{saving ? "Enregistrement…" : "Ajouter au carnet"}</button></div>
           </div>
         </div>
+      )}
+
+      {annaleOpen && (
+        <AnnaleModal
+          resume={annaleOpen.resume}
+          onClose={() => {
+            setAnnaleOpen(null);
+            api.listAnnales().then(setAnnales);
+            refreshAll();
+          }}
+        />
       )}
     </div>
   );

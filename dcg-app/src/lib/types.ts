@@ -147,6 +147,62 @@ export interface DueFlashcardsResponse {
   cards: DueFlashcard[];
 }
 
+/** One question in the daily "quiz éclair" — a previously missed QCM
+ * question re-asked with its original options. The correct index stays
+ * server-side; answers are graded by the answer endpoint. */
+export interface DueQuizItem {
+  id: number;
+  chapter_id: number;
+  chapter_name: string;
+  ue_code: string;
+  ue_color: string | null;
+  question: string;
+  theme: string | null;
+  options: string[];
+}
+
+export interface DueQuizResponse {
+  total: number;
+  items: DueQuizItem[];
+}
+
+export interface QuizAnswerResult {
+  was_correct: boolean;
+  correct: number;
+  explication: string | null;
+  box_level: number;
+  next_review_date: string;
+}
+
+/** One timed training run on a real past exam paper (annale). */
+export interface AnnaleAttempt {
+  id: number;
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  chapter_id: number | null;
+  title: string;
+  subject_text: string;
+  corrige_text: string | null;
+  duration_minutes: number;
+  exercice_json: string | null;
+  answers_json: string | null;
+  correction_json: string | null;
+  score: number | null;
+  total: number | null;
+  status: "in_progress" | "completed" | "abandoned";
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface BackupInfo {
+  file_name: string;
+  size_bytes: number;
+  created_label: string;
+  is_safety: boolean;
+}
+
 export interface DueChapter {
   chapter_id: number;
   chapter_name: string;
