@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAppState } from "../../state/AppState";
 import { useTheme } from "../../lib/theme";
 import * as api from "../../lib/api";
-import { avgScorePct, chapterProgress, computeStudyStreak, countdownTo, daysSinceLastActivity } from "../../lib/format";
+import { avgScorePct, chapterProgress, computeStudyStreak, countdownTo, daysSinceLastActivity, todayIso } from "../../lib/format";
 import type { Chapter, Ue, WeakChapter } from "../../lib/types";
 import type { ShellView } from "./Nav";
 
@@ -37,7 +37,10 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
   useEffect(() => { api.listWeakChapters().then(setWeak); }, [dueChapters, qcmScores]);
   useEffect(() => { const id = window.setInterval(() => tick((value) => value + 1), 60_000); return () => window.clearInterval(id); }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Local calendar day, matching todayIso() in Pilotage and the backend's
+  // date('now','localtime') — toISOString() is UTC and disagrees with all of
+  // them for the first hour(s) after local midnight.
+  const today = todayIso();
   const dueToday = dueChapters.filter((item) => item.next_review_date <= today);
   const dueErrors = errorNotes.filter((item) => item.status === "active" && item.next_review_date <= today);
   const activityDates = [...timerSessions.map((item) => item.ended_at), ...qcmScores.map((item) => item.date)];

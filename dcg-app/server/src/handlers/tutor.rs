@@ -305,9 +305,14 @@ pub struct CompleteSessionRequest {
     pub overconfidence_count: i64,
 }
 
-#[derive(Debug, Deserialize)]
+/// `theme` is LLM-generated and not guaranteed to be present even though the
+/// prompt asks for it (the frontend hedges the same way with `q.theme ||
+/// "Général"`), so it must default rather than fail the parse.
+#[derive(Debug, Deserialize, Default)]
 struct StoredQcmMiss {
+    #[serde(default)]
     question: String,
+    #[serde(default)]
     theme: String,
 }
 
@@ -317,17 +322,33 @@ struct StoredQcmMiss {
 /// The learner can add a more specific manual error note after an annale.
 fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i64, ue_id: i64, raw: Option<String>) -> rusqlite::Result<()> {
     let Some(raw) = raw else { return Ok(()); };
-    let misses: Vec<StoredQcmMiss> = serde_json::from_str(&raw).unwrap_or_default();
+    // Parse element-by-element so one malformed entry (this is stored LLM
+    // output) costs only itself, not every other miss in the array.
+    let misses: Vec<StoredQcmMiss> = serde_json::from_str::<Vec<serde_json::Value>>(&raw)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| serde_json::from_value(v).unwrap_or_default())
+        .collect();
     for miss in misses {
+        if miss.question.trim().is_empty() {
+            continue;
+        }
         let title = if miss.theme.trim().is_empty() {
             miss.question
         } else {
             format!("{} — {}", miss.theme, miss.question)
         };
+        // NOT EXISTS: re-missing the same notion in a later session re-surfaces
+        // the existing active note instead of stacking a near-duplicate; the
+        // per-session UNIQUE constraint (via OR IGNORE) still covers retried
+        // completion callbacks even after the original note was mastered.
         conn.execute(
             "INSERT OR IGNORE INTO error_notes
-                (ue_id, chapter_id, tutor_session_id, title, error_type, skill, correction, source)
-             VALUES (?1, ?2, ?3, ?4, 'knowledge', 'recall', ?5, 'tutor')",
+                (ue_id, chapter_id, tutor_session_id, title, error_type, skill, correction, source, next_review_date)
+             SELECT ?1, ?2, ?3, ?4, 'knowledge', 'recall', ?5, 'tutor', date('now','localtime')
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM error_notes WHERE chapter_id = ?2 AND title = ?4 AND status = 'active'
+             )",
             params![
                 ue_id,
                 chapter_id,
@@ -701,5 +722,63 @@ mod tests {
 
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1);
+    }
+
+    fn error_note_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM error_notes", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn capture_misses_tolerates_missing_theme_and_malformed_items() {
+        let conn = setup();
+        // Stored LLM output: one complete item, one missing `theme` entirely,
+        // one non-object garbage entry, one with no usable question. Only the
+        // last two should be dropped — a missing theme must not cost the
+        // whole array.
+        let raw = r#"[
+            {"question": "Quel régime choisir ?", "theme": "TVA"},
+            {"question": "Définir l'amortissement"},
+            "n'importe quoi",
+            {"theme": "IS", "question": "   "}
+        ]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+        assert_eq!(error_note_count(&conn), 2);
+
+        let themeless_title: String = conn
+            .query_row("SELECT title FROM error_notes WHERE title NOT LIKE '%—%'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(themeless_title, "Définir l'amortissement");
+    }
+
+    #[test]
+    fn capture_misses_survives_completely_unparseable_json() {
+        let conn = setup();
+        capture_tutor_misses(&conn, 1, 1, 1, Some("{not json at all".to_string())).unwrap();
+        capture_tutor_misses(&conn, 1, 1, 1, None).unwrap();
+        assert_eq!(error_note_count(&conn), 0);
+    }
+
+    #[test]
+    fn capture_misses_reuses_an_existing_active_note_instead_of_duplicating() {
+        let conn = setup();
+        let raw = r#"[{"question": "Quel régime choisir ?", "theme": "TVA"}]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+
+        // Re-missing the same notion in a later session for the same chapter
+        // must not stack a near-duplicate note.
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        let second_session = conn.last_insert_rowid();
+        capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
+        assert_eq!(error_note_count(&conn), 1);
+
+        // Once the note is mastered, missing the notion again is a real
+        // regression — it should come back as a fresh active note.
+        conn.execute("UPDATE error_notes SET status = 'mastered' WHERE id = 1", []).unwrap();
+        capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
+        assert_eq!(error_note_count(&conn), 2);
+        let active: i64 = conn
+            .query_row("SELECT COUNT(*) FROM error_notes WHERE status = 'active'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(active, 1);
     }
 }

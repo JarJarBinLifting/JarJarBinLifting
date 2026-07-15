@@ -72,3 +72,10 @@ backup, since everything lives in that one local file.
   chapter-level Leitner scheduler (`server/src/handlers/scheduler.rs`,
   unit-tested) driven by each session's QCM score and confidence ratings —
   no manually-maintained weekly planning grid.
+- **Pilotage** (`src/components/shell/Pilotage.tsx`): an exam-oriented risk
+  view — an error notebook (carnet d'erreurs) where each mistake climbs a
+  5-step revision ladder (recall → guided application → mini-case → timed
+  extract → mastered), per-UE exam-skill self-assessments, and a
+  current-vs-target mark scenario per UE. Missed QCM questions from tutor
+  sessions land in the notebook automatically; already-active notes are
+  re-surfaced rather than duplicated.

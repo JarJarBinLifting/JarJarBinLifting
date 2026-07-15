@@ -503,9 +503,14 @@ pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<C
         return Err(AppError("Le point d'erreur doit être renseigné".into()));
     }
     with_conn(&state.db, |conn| {
+        // next_review_date is set explicitly with localtime rather than
+        // relying on the column DEFAULT's date('now') (UTC): all review-due
+        // logic in this app runs on the user's local calendar day (the
+        // chapter scheduler uses chrono::Local), and a UTC date is a day
+        // behind for the first hour(s) after local midnight.
         conn.execute(
-            "INSERT INTO error_notes (ue_id, chapter_id, title, error_type, skill, my_reasoning, correction, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO error_notes (ue_id, chapter_id, title, error_type, skill, my_reasoning, correction, source, next_review_date)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, date('now','localtime'))",
             params![
                 body.ue_id,
                 body.chapter_id,
@@ -538,39 +543,43 @@ pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<C
 /// completed timed extract marks the mistake mastered; it stays visible as a
 /// useful record but no longer appears in the due work.
 pub async fn advance_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Json<ErrorNote>, AppError> {
-    with_conn(&state.db, |conn| {
-        let (step, status): (i64, String) = conn.query_row(
-            "SELECT ladder_step, status FROM error_notes WHERE id = ?1",
-            params![id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+    with_conn(&state.db, |conn| advance_error_note_inner(conn, id))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn advance_error_note_inner(conn: &Connection, id: i64) -> rusqlite::Result<ErrorNote> {
+    let (step, status): (i64, String) = conn.query_row(
+        "SELECT ladder_step, status FROM error_notes WHERE id = ?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if status == "active" {
+        let (next_step, next_status, delay_days) = match step {
+            0 => (1, "active", 1),
+            1 => (2, "active", 3),
+            2 => (3, "active", 7),
+            _ => (4, "mastered", 0),
+        };
+        // localtime for the same reason as create_error_note: due-dates live
+        // on the user's local calendar day, not UTC's.
+        conn.execute(
+            "UPDATE error_notes SET ladder_step = ?1, status = ?2,
+                next_review_date = date('now','localtime', ?3), updated_at = datetime('now')
+             WHERE id = ?4",
+            params![next_step, next_status, format!("+{delay_days} days"), id],
         )?;
-        if status == "active" {
-            let (next_step, next_status, delay_days) = match step {
-                0 => (1, "active", 1),
-                1 => (2, "active", 3),
-                2 => (3, "active", 7),
-                _ => (4, "mastered", 0),
-            };
-            conn.execute(
-                "UPDATE error_notes SET ladder_step = ?1, status = ?2,
-                    next_review_date = date('now', ?3), updated_at = datetime('now')
-                 WHERE id = ?4",
-                params![next_step, next_status, format!("+{delay_days} days"), id],
-            )?;
-        }
-        conn.query_row(
-            &format!(
-                "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
-                 JOIN ues u ON u.id = e.ue_id
-                 LEFT JOIN chapters c ON c.id = e.chapter_id
-                 WHERE e.id = ?1"
-            ),
-            params![id],
-            row_to_error_note,
-        )
-    })
-    .map(Json)
-    .map_err(AppError)
+    }
+    conn.query_row(
+        &format!(
+            "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
+             JOIN ues u ON u.id = e.ue_id
+             LEFT JOIN chapters c ON c.id = e.chapter_id
+             WHERE e.id = ?1"
+        ),
+        params![id],
+        row_to_error_note,
+    )
 }
 
 pub async fn delete_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
@@ -626,9 +635,11 @@ pub async fn record_skill_assessment(State(state): State<AppState>, Json(body): 
         return Err(AppError("La compétence doit être notée de 1 à 4".into()));
     }
     with_conn(&state.db, |conn| {
+        // recorded_at is shown as a calendar date in Pilotage ("évalué le …"),
+        // so stamp it with the local day, not the column DEFAULT's UTC day.
         conn.execute(
-            "INSERT INTO skill_assessments (ue_id, chapter_id, skill, score, note)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO skill_assessments (ue_id, chapter_id, skill, score, note, recorded_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, date('now','localtime'))",
             params![body.ue_id, body.chapter_id, body.skill, body.score, body.note.filter(|s| !s.trim().is_empty())],
         )?;
         Ok(())
@@ -686,4 +697,65 @@ pub async fn set_exam_scenario(State(state): State<AppState>, Path(ue_id): Path<
         Ok(())
     })
     .map_err(AppError)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrate;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate::run(&conn).unwrap();
+        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", []).unwrap();
+        conn.execute(
+            "INSERT INTO error_notes (ue_id, title, error_type, skill) VALUES (1, 'Mauvais régime de TVA', 'method', 'method')",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn local_date_plus(days: i64) -> String {
+        (chrono::Local::now().date_naive() + chrono::Duration::days(days)).to_string()
+    }
+
+    #[test]
+    fn ladder_advances_through_all_steps_with_growing_delays() {
+        let conn = setup();
+
+        // Step 0 → 1: due again tomorrow.
+        let note = advance_error_note_inner(&conn, 1).unwrap();
+        assert_eq!((note.ladder_step, note.status.as_str()), (1, "active"));
+        assert_eq!(note.next_review_date, local_date_plus(1));
+
+        // Step 1 → 2: +3 days.
+        let note = advance_error_note_inner(&conn, 1).unwrap();
+        assert_eq!((note.ladder_step, note.status.as_str()), (2, "active"));
+        assert_eq!(note.next_review_date, local_date_plus(3));
+
+        // Step 2 → 3: +7 days.
+        let note = advance_error_note_inner(&conn, 1).unwrap();
+        assert_eq!((note.ladder_step, note.status.as_str()), (3, "active"));
+        assert_eq!(note.next_review_date, local_date_plus(7));
+
+        // Step 3 → 4: the timed extract is done, the mistake is mastered.
+        let note = advance_error_note_inner(&conn, 1).unwrap();
+        assert_eq!((note.ladder_step, note.status.as_str()), (4, "mastered"));
+    }
+
+    #[test]
+    fn advancing_a_mastered_note_is_a_no_op() {
+        let conn = setup();
+        for _ in 0..4 {
+            advance_error_note_inner(&conn, 1).unwrap();
+        }
+        let before: String = conn
+            .query_row("SELECT next_review_date FROM error_notes WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+
+        let note = advance_error_note_inner(&conn, 1).unwrap();
+        assert_eq!((note.ladder_step, note.status.as_str()), (4, "mastered"));
+        assert_eq!(note.next_review_date, before);
+    }
 }
