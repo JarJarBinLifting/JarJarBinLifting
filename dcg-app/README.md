@@ -37,6 +37,47 @@ It opens `http://127.0.0.1:4287` in your default browser automatically. Copy
 the binary anywhere you like — the frontend is baked in, nothing else needs
 to ship alongside it. Set `DCG_PORT` to use a different port.
 
+## Building on your own Windows PC, from scratch
+
+One-time toolchain installs (each is a normal installer, default options are
+fine):
+
+1. **Git** — <https://git-scm.com/download/win>
+2. **Node.js LTS** — <https://nodejs.org> (v22 or newer)
+3. **Rust** — <https://rustup.rs> → download and run `rustup-init.exe`. When
+   it offers to install the *Visual Studio C++ Build Tools*, accept — the
+   Rust compiler needs them on Windows.
+
+Then open a **new** PowerShell window (so the installs are on `PATH`) and
+run:
+
+```powershell
+git clone https://github.com/JarJarBinLifting/JarJarBinLifting.git
+cd JarJarBinLifting\dcg-app
+npm ci
+npm run build
+npm run server:build
+```
+
+The first compile takes a few minutes. The finished app is one file:
+
+```
+JarJarBinLifting\dcg-app\server\target\release\dcg-server.exe
+```
+
+Copy it anywhere (Desktop, etc.), rename it if you like, and double-click it —
+a console window stays open (that's the local server; keep it open while you
+study) and the app opens in your browser. Your data is **not** stored next to
+the exe — it lives in the OS app-data directory — so rebuilding or replacing
+the exe never touches your database.
+
+### No-install alternative: let GitHub build it
+
+The repository has a build workflow: on GitHub, open **Actions → "Build DCG
+Étude" → Run workflow**, wait for the run to finish, then download the
+`dcg-etude-windows` artifact from the run page (it's a zip containing
+`dcg-server.exe`). macOS and Linux binaries are built by the same run.
+
 ## First run
 
 The database is created automatically — nothing to configure. Just:
