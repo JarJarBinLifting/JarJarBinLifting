@@ -1,0 +1,56 @@
+# Builds the self-contained DCG Étude binary for Windows, macOS and Linux.
+#
+# Run it from the GitHub UI: Actions → "Build DCG Étude" → Run workflow
+# (pick the branch), then download the artifact for your OS from the run
+# page. No local toolchain needed.
+name: Build DCG Étude
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: dcg-etude-windows
+            binary: dcg-app/server/target/release/dcg-server.exe
+          - os: macos-latest
+            artifact: dcg-etude-macos
+            binary: dcg-app/server/target/release/dcg-server
+          - os: ubuntu-latest
+            artifact: dcg-etude-linux
+            binary: dcg-app/server/target/release/dcg-server
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: dcg-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dcg-app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dcg-app/server
+
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build server (frontend embedded)
+        run: cargo build --release --manifest-path server/Cargo.toml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
+          if-no-files-found: error

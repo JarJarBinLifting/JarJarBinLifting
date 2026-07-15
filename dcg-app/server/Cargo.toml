@@ -25,10 +25,22 @@ mime_guess = "2"
 open = "5"
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled", "backup"] }
-keyring = "3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
+
+# keyring v3 ships its platform backends as opt-in features — without them it
+# compiles everywhere but stores nothing, and every key save silently lands in
+# the plaintext fallback. One backend per platform; "vendored" on Linux builds
+# libdbus statically so the binary doesn't need dbus dev headers at build time.
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "vendored"] }
 
 [dev-dependencies]
 tempfile = "3"
