@@ -3,6 +3,7 @@ import type {
   Chapter,
   CompleteTutorSessionResult,
   DueChapter,
+  DueFlashcardsResponse,
   ErrorNote,
   ErrorSource,
   ErrorType,
@@ -218,6 +219,7 @@ export const saveFlashcards = (
 ) => post<FlashcardRow[]>(`/tutor/chapters/${chapterId}/flashcards`, { tutor_session_id: tutorSessionId, cards });
 export const updateFlashcardProgress = (id: number, correct: boolean) =>
   post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, { correct });
+export const listDueFlashcards = () => get<DueFlashcardsResponse>("/tutor/flashcards/due");
 
 export const completeTutorSession = (
   tutorSessionId: number,

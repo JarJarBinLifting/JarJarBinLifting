@@ -82,6 +82,29 @@ pub struct FlashcardRow {
     pub last_reviewed_at: Option<String>,
 }
 
+/// One card in the daily "révision éclair" deck, carrying just enough
+/// chapter/UE context to label the card in the review UI.
+#[derive(Debug, Serialize, Clone)]
+pub struct DueFlashcard {
+    pub id: i64,
+    pub chapter_id: i64,
+    pub chapter_name: String,
+    pub ue_code: String,
+    pub ue_color: Option<String>,
+    pub question: String,
+    pub answer: String,
+    pub box_level: i64,
+}
+
+/// `total` is the full count of cards due today; `cards` is capped at the
+/// daily deck limit so a backlog after a break stays finishable instead of
+/// becoming a wall — the rest simply stays due and fills tomorrow's deck.
+#[derive(Debug, Serialize)]
+pub struct DueFlashcardsResponse {
+    pub total: i64,
+    pub cards: Vec<DueFlashcard>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct DueChapter {
     pub chapter_id: i64,

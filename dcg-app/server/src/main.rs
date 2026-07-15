@@ -77,6 +77,7 @@ fn api_router() -> Router<AppState> {
         .route("/tutor/sessions/:id", patch(handlers::tutor::save_tutor_session_progress))
         .route("/tutor/sessions/:id/abandon", post(handlers::tutor::abandon_tutor_session))
         .route("/tutor/chapters/:chapter_id/flashcards", get(handlers::tutor::list_flashcards).post(handlers::tutor::save_flashcards))
+        .route("/tutor/flashcards/due", get(handlers::tutor::list_due_flashcards))
         .route("/tutor/flashcards/:id/progress", post(handlers::tutor::update_flashcard_progress))
         .route("/tutor/sessions/:id/complete", post(handlers::tutor::complete_tutor_session))
         .route("/tutor/due-chapters", get(handlers::tutor::list_due_chapters))

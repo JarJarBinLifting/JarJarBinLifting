@@ -79,3 +79,12 @@ backup, since everything lives in that one local file.
   current-vs-target mark scenario per UE. Missed QCM questions from tutor
   sessions land in the notebook automatically; already-active notes are
   re-surfaced rather than duplicated.
+- **Révision éclair** (`src/components/shell/QuickReview.tsx`): a daily
+  spaced-repetition flashcard deck, capped at 20 cards so it stays
+  finishable (~5 min). Every card has its own Leitner schedule
+  (`next_card_schedule` in `scheduler.rs`, exam-aware like the chapter
+  scheduler): a correct answer pushes it further out (1→2→4→8→15→30 days),
+  a miss brings it back tomorrow. Cards come from tutor sessions and from
+  the error notebook (a note's title/correction becomes a card
+  automatically). The whole flow costs zero API calls — cards already
+  exist in the database.

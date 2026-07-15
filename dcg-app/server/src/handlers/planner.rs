@@ -497,6 +497,25 @@ pub struct CreateErrorNoteRequest {
     pub source: Option<String>,
 }
 
+/// Mints a révision éclair flashcard from an error note — the note's title
+/// is the recto, its correction the verso — so a recorded mistake gets daily
+/// spaced-repetition recall on top of the deliberate revision ladder. Only
+/// fires when the note has both a chapter (flashcards.chapter_id is NOT
+/// NULL) and a non-empty correction (an empty verso is a useless card).
+/// Idempotent: the UNIQUE index on error_note_id (+ OR IGNORE) keeps one
+/// card per note, and ON DELETE CASCADE removes the card with the note.
+/// Box 0 puts it at the front of the next deck.
+pub(crate) fn create_card_for_error_note(conn: &Connection, note_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO flashcards (chapter_id, error_note_id, question, answer, box_level, next_review_date)
+         SELECT e.chapter_id, e.id, e.title, e.correction, 0, date('now','localtime')
+         FROM error_notes e
+         WHERE e.id = ?1 AND e.chapter_id IS NOT NULL AND TRIM(COALESCE(e.correction, '')) <> ''",
+        params![note_id],
+    )?;
+    Ok(())
+}
+
 pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<CreateErrorNoteRequest>) -> Result<Json<ErrorNote>, AppError> {
     let title = body.title.trim().to_string();
     if title.is_empty() {
@@ -523,6 +542,7 @@ pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<C
             ],
         )?;
         let id = conn.last_insert_rowid();
+        create_card_for_error_note(conn, id)?;
         conn.query_row(
             &format!(
                 "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e

@@ -3,6 +3,7 @@ import { useAppState } from "../../state/AppState";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
 import type { Chapter, DueChapter, WeakChapter } from "../../lib/types";
+import { QuickReview } from "./QuickReview";
 import { Spin } from "./common";
 
 const OUTCOME_META: Record<string, { label: string; color: string }> = {
@@ -85,7 +86,8 @@ function WeakRow({ w, onStudy }: { w: WeakChapter; onStudy: (chapterId: number, 
 }
 
 export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) => void }) {
-  const { chapters, dueChapters, refreshAll } = useAppState();
+  const { chapters, dueChapters, dueFlashcards, refreshAll } = useAppState();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<DueChapter[] | null>(null);
   const [weak, setWeak] = useState<WeakChapter[] | null>(null);
 
@@ -113,6 +115,24 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, maxWidth: 650 }}>
         Chaque chapitre revient automatiquement selon ta performance — pas de planning fixe à tenir à jour.
       </div>
+
+      {dueFlashcards.total > 0 && (
+        <button
+          className="agenda-row surface"
+          onClick={() => setReviewOpen(true)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-green)", padding: "13px 15px", marginBottom: 20, color: "var(--text)" }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "var(--accent-green)", textTransform: "uppercase", marginBottom: 3 }}>
+              Révision éclair · sans IA
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>
+              {dueFlashcards.total} carte{dueFlashcards.total > 1 ? "s" : ""} à revoir · ~{Math.max(1, Math.ceil(dueFlashcards.cards.length / 4))} min
+            </div>
+          </div>
+          <span style={{ color: "var(--accent-blue)", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>Lancer →</span>
+        </button>
+      )}
 
       {weakest.length > 0 && (
         <Section title={`Points faibles (${weak?.length ?? 0})`} color="var(--accent-purple)" empty="">
@@ -153,6 +173,17 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
       >
         ↺ Rafraîchir
       </button>
+
+      {reviewOpen && (
+        <QuickReview
+          cards={dueFlashcards.cards}
+          total={dueFlashcards.total}
+          onClose={() => {
+            setReviewOpen(false);
+            refreshAll();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ use crate::appstate::{AppError, AppState};
 use crate::db::with_conn;
 use crate::handlers::planner::{row_to_qcm, set_chapter_status};
 use crate::handlers::scheduler::{self, SessionResult};
-use crate::models::{CompleteTutorSessionResult, DueChapter, FlashcardRow, ModelUsageRow, TutorSessionRow, WeakChapter};
+use crate::models::{CompleteTutorSessionResult, DueChapter, DueFlashcard, DueFlashcardsResponse, FlashcardRow, ModelUsageRow, TutorSessionRow, WeakChapter};
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use rusqlite::{params, Connection};
@@ -246,9 +246,13 @@ pub struct SaveFlashcardsRequest {
 pub async fn save_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>, Json(body): Json<SaveFlashcardsRequest>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
     with_conn(&state.db, |conn| {
         for card in &body.cards {
+            // Due today: freshly generated cards get graded moments later in
+            // the Mémorisation phase (which reschedules them), and if the
+            // session is abandoned first they correctly land in tomorrow
+            // morning's révision éclair deck instead of never surfacing.
             conn.execute(
-                "INSERT INTO flashcards (chapter_id, tutor_session_id, concept_id, question, answer)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO flashcards (chapter_id, tutor_session_id, concept_id, question, answer, next_review_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, date('now','localtime'))",
                 params![chapter_id, body.tutor_session_id, card.concept_id, card.question, card.answer],
             )?;
         }
@@ -267,36 +271,99 @@ pub struct FlashcardProgressRequest {
 
 /// Mirrors the flashcard-level Leitner queue: a correct pass advances the box
 /// and streak (mastered once the streak reaches 2), a miss resets both so the
-/// card recirculates.
+/// card recirculates. One grading path for both contexts — the Mémorisation
+/// phase inside a tutor session and the standalone révision éclair deck — so
+/// they share a single per-card schedule instead of drifting apart.
 pub async fn update_flashcard_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<FlashcardProgressRequest>) -> Result<Json<FlashcardRow>, AppError> {
-    with_conn(&state.db, |conn| {
-        if body.correct {
-            conn.execute(
-                "UPDATE flashcards SET
-                    correct_streak = correct_streak + 1,
-                    box_level = MIN(box_level + 1, 3),
-                    mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE 0 END,
-                    last_reviewed_at = datetime('now'),
-                    updated_at = datetime('now')
-                 WHERE id = ?1",
-                params![id],
-            )?;
-        } else {
-            conn.execute(
-                "UPDATE flashcards SET
-                    correct_streak = 0,
-                    box_level = 0,
-                    mastered = 0,
-                    last_reviewed_at = datetime('now'),
-                    updated_at = datetime('now')
-                 WHERE id = ?1",
-                params![id],
-            )?;
-        }
-        conn.query_row(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"), params![id], row_to_flashcard)
-    })
-    .map(Json)
-    .map_err(AppError)
+    with_conn(&state.db, |conn| grade_flashcard(conn, id, body.correct))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn read_exam_date(conn: &Connection) -> Option<chrono::NaiveDate> {
+    conn.query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
+        .ok()
+        .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
+}
+
+fn grade_flashcard(conn: &Connection, id: i64, correct: bool) -> rusqlite::Result<FlashcardRow> {
+    let current_box: i64 = conn.query_row("SELECT box_level FROM flashcards WHERE id = ?1", params![id], |r| r.get(0))?;
+    let today = chrono::Local::now().date_naive();
+    let (box_level, next_review_date) = scheduler::next_card_schedule(current_box, correct, today, read_exam_date(conn));
+
+    if correct {
+        conn.execute(
+            "UPDATE flashcards SET
+                correct_streak = correct_streak + 1,
+                box_level = ?1,
+                mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE 0 END,
+                next_review_date = ?2,
+                last_reviewed_at = datetime('now'),
+                updated_at = datetime('now')
+             WHERE id = ?3",
+            params![box_level, next_review_date.to_string(), id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE flashcards SET
+                correct_streak = 0,
+                box_level = ?1,
+                mastered = 0,
+                next_review_date = ?2,
+                last_reviewed_at = datetime('now'),
+                updated_at = datetime('now')
+             WHERE id = ?3",
+            params![box_level, next_review_date.to_string(), id],
+        )?;
+    }
+    conn.query_row(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"), params![id], row_to_flashcard)
+}
+
+/// Hard cap on the daily révision éclair deck: a bounded, finishable stack
+/// (roughly 5 minutes) beats an unbounded backlog wall after a few days
+/// away. Whatever doesn't fit simply stays due and fills tomorrow's deck.
+const DAILY_DECK_LIMIT: i64 = 20;
+
+/// The daily card deck: every card whose review date has arrived, weakest
+/// box first (an error-note card at box 0 outranks a comfortable box-4
+/// card), oldest due date as tiebreak. Costs zero LLM calls — the cards
+/// already exist.
+pub async fn list_due_flashcards(State(state): State<AppState>) -> Result<Json<DueFlashcardsResponse>, AppError> {
+    with_conn(&state.db, |conn| list_due_flashcards_inner(conn))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcardsResponse> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM flashcards WHERE next_review_date IS NOT NULL AND next_review_date <= date('now','localtime')",
+        [],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT f.id, f.chapter_id, c.name, u.code, u.color, f.question, f.answer, f.box_level
+         FROM flashcards f
+         JOIN chapters c ON c.id = f.chapter_id
+         JOIN ues u ON u.id = c.ue_id
+         WHERE f.next_review_date IS NOT NULL AND f.next_review_date <= date('now','localtime')
+         ORDER BY f.box_level ASC, f.next_review_date ASC, f.id ASC
+         LIMIT ?1",
+    )?;
+    let cards = stmt
+        .query_map(params![DAILY_DECK_LIMIT], |row| {
+            Ok(DueFlashcard {
+                id: row.get(0)?,
+                chapter_id: row.get(1)?,
+                chapter_name: row.get(2)?,
+                ue_code: row.get(3)?,
+                ue_color: row.get(4)?,
+                question: row.get(5)?,
+                answer: row.get(6)?,
+                box_level: row.get(7)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(DueFlashcardsResponse { total, cards })
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,15 +372,18 @@ pub struct CompleteSessionRequest {
     pub overconfidence_count: i64,
 }
 
-/// `theme` is LLM-generated and not guaranteed to be present even though the
-/// prompt asks for it (the frontend hedges the same way with `q.theme ||
-/// "Général"`), so it must default rather than fail the parse.
+/// `theme` and `explication` are LLM-generated and not guaranteed to be
+/// present even though the prompt asks for them (the frontend hedges the
+/// same way with `q.theme || "Général"`), so they must default rather than
+/// fail the parse.
 #[derive(Debug, Deserialize, Default)]
 struct StoredQcmMiss {
     #[serde(default)]
     question: String,
     #[serde(default)]
     theme: String,
+    #[serde(default)]
+    explication: String,
 }
 
 /// A QCM miss is useful only if it comes back as a concrete future action.
@@ -338,25 +408,35 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
         } else {
             format!("{} — {}", miss.theme, miss.question)
         };
+        // The QCM's own explication is the best available correction — a real
+        // answer, not generic advice — and doubles as the verso of the
+        // flashcard minted below. Fall back to the generic next-action text
+        // only when the model didn't provide one.
+        let explication = miss.explication.trim();
+        let correction = if explication.is_empty() {
+            "Reprendre la notion, l'expliquer sans support, puis refaire une application courte."
+        } else {
+            explication
+        };
         // NOT EXISTS: re-missing the same notion in a later session re-surfaces
         // the existing active note instead of stacking a near-duplicate; the
         // per-session UNIQUE constraint (via OR IGNORE) still covers retried
         // completion callbacks even after the original note was mastered.
-        conn.execute(
+        let inserted = conn.execute(
             "INSERT OR IGNORE INTO error_notes
                 (ue_id, chapter_id, tutor_session_id, title, error_type, skill, correction, source, next_review_date)
              SELECT ?1, ?2, ?3, ?4, 'knowledge', 'recall', ?5, 'tutor', date('now','localtime')
              WHERE NOT EXISTS (
                  SELECT 1 FROM error_notes WHERE chapter_id = ?2 AND title = ?4 AND status = 'active'
              )",
-            params![
-                ue_id,
-                chapter_id,
-                tutor_session_id,
-                title,
-                "Reprendre la notion, l'expliquer sans support, puis refaire une application courte.",
-            ],
+            params![ue_id, chapter_id, tutor_session_id, title, correction],
         )?;
+        // Only mint a flashcard when the answer is real content (the QCM
+        // explication) — generic advice makes a useless verso. The card
+        // starts at box 0 so it leads tomorrow's révision éclair deck.
+        if inserted == 1 && !explication.is_empty() {
+            crate::handlers::planner::create_card_for_error_note(conn, conn.last_insert_rowid())?;
+        }
     }
     Ok(())
 }
@@ -574,6 +654,9 @@ mod tests {
     /// need (tutor_sessions and its FK chain back to chapters/ues).
     fn setup() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+        // db::open enables foreign_keys in production; tests must too, or the
+        // ON DELETE CASCADE paths under test silently don't fire.
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
         migrate::run(&conn).unwrap();
         conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", []).unwrap();
         conn.execute("INSERT INTO chapters (ue_id, name) VALUES (1, 'Test chapter')", []).unwrap();
@@ -780,5 +863,103 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM error_notes WHERE status = 'active'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(active, 1);
+    }
+
+    // ── révision éclair: per-card schedule + due deck ──
+
+    fn insert_card(conn: &Connection, question: &str, box_level: i64, due: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO flashcards (chapter_id, question, answer, box_level, next_review_date) VALUES (1, ?1, 'réponse', ?2, ?3)",
+            params![question, box_level, due],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn local_date_plus(days: i64) -> String {
+        (chrono::Local::now().date_naive() + chrono::Duration::days(days)).to_string()
+    }
+
+    #[test]
+    fn grading_a_card_correct_climbs_a_box_and_schedules_the_next_review() {
+        let conn = setup();
+        let id = insert_card(&conn, "Q", 1, &local_date_plus(0));
+
+        let card = grade_flashcard(&conn, id, true).unwrap();
+        assert_eq!(card.box_level, 2);
+        let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        assert_eq!(due, local_date_plus(4)); // box 2 → +4 days
+    }
+
+    #[test]
+    fn missing_a_card_resets_it_to_box_zero_due_tomorrow() {
+        let conn = setup();
+        let id = insert_card(&conn, "Q", 4, &local_date_plus(0));
+        conn.execute("UPDATE flashcards SET correct_streak = 3, mastered = 1 WHERE id = ?1", params![id]).unwrap();
+
+        let card = grade_flashcard(&conn, id, false).unwrap();
+        assert_eq!(card.box_level, 0);
+        assert_eq!(card.correct_streak, 0);
+        assert!(!card.mastered);
+        let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        assert_eq!(due, local_date_plus(1));
+    }
+
+    #[test]
+    fn due_deck_is_capped_ordered_weakest_first_and_reports_the_full_total() {
+        let conn = setup();
+        // 25 due cards (weakest last by insertion order, to prove ordering is
+        // by box, not id) + one scheduled for tomorrow that must not appear.
+        for i in 0..25 {
+            insert_card(&conn, &format!("Q{i}"), 3, &local_date_plus(0));
+        }
+        insert_card(&conn, "faible", 0, &local_date_plus(0));
+        insert_card(&conn, "pas encore due", 0, &local_date_plus(1));
+
+        let deck = list_due_flashcards_inner(&conn).unwrap();
+        assert_eq!(deck.total, 26);
+        assert_eq!(deck.cards.len(), 20);
+        assert_eq!(deck.cards[0].question, "faible"); // box 0 outranks box 3
+        assert!(deck.cards.iter().all(|c| c.question != "pas encore due"));
+        assert_eq!(deck.cards[0].ue_code, "UE1");
+    }
+
+    #[test]
+    fn a_captured_miss_with_explication_mints_a_flashcard_answering_with_it() {
+        let conn = setup();
+        let raw = r#"[
+            {"question": "Quel régime choisir ?", "theme": "TVA", "explication": "Le régime réel normal s'applique au-delà des seuils."},
+            {"question": "Sans explication", "theme": "IS"}
+        ]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+        assert_eq!(error_note_count(&conn), 2);
+
+        // Only the miss with real content becomes a card, at box 0, and its
+        // verso is the QCM explication (not the generic advice fallback).
+        let (count, answer, box_level): (i64, String, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(answer), MAX(box_level) FROM flashcards WHERE error_note_id IS NOT NULL",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(answer, "Le régime réel normal s'applique au-delà des seuils.");
+        assert_eq!(box_level, 0);
+    }
+
+    #[test]
+    fn deleting_an_error_note_removes_its_card_but_not_tutor_cards() {
+        let conn = setup();
+        insert_card(&conn, "carte de session", 1, &local_date_plus(0));
+        let raw = r#"[{"question": "Q ratée", "theme": "TVA", "explication": "La bonne règle."}]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+
+        let before: i64 = conn.query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0)).unwrap();
+        assert_eq!(before, 2);
+
+        conn.execute("DELETE FROM error_notes", []).unwrap();
+        let after: i64 = conn.query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0)).unwrap();
+        assert_eq!(after, 1);
     }
 }

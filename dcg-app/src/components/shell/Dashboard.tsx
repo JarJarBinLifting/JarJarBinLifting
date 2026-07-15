@@ -4,6 +4,7 @@ import { useTheme } from "../../lib/theme";
 import * as api from "../../lib/api";
 import { avgScorePct, chapterProgress, computeStudyStreak, countdownTo, daysSinceLastActivity, todayIso } from "../../lib/format";
 import type { Chapter, Ue, WeakChapter } from "../../lib/types";
+import { QuickReview } from "./QuickReview";
 import type { ShellView } from "./Nav";
 
 const GAP_THRESHOLD_DAYS = 3;
@@ -29,9 +30,10 @@ function pickQuickStart(chapters: Chapter[], weak: WeakChapter[], dueChapterIds:
 }
 
 export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (ue: Ue) => void; onNavigate: (view: ShellView) => void; onQuickStart: (chapter: Chapter) => void }) {
-  const { ues, chapters, qcmScores, timerSessions, dueChapters, errorNotes, examDate } = useAppState();
+  const { ues, chapters, qcmScores, timerSessions, dueChapters, dueFlashcards, errorNotes, examDate, refreshAll } = useAppState();
   const { theme, toggle } = useTheme();
   const [weak, setWeak] = useState<WeakChapter[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [, tick] = useState(0);
 
   useEffect(() => { api.listWeakChapters().then(setWeak); }, [dueChapters, qcmScores]);
@@ -91,15 +93,16 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
         <Metric value={`${totalDone}/${chapters.length || 0}`} label="chapitres maîtrisés" tone="green" />
         <Metric value={averageScore === null ? "—" : `${averageScore}%`} label="score QCM moyen" tone={averageScore !== null && averageScore < 60 ? "amber" : "green"} />
         <Metric value={streak ? `${streak} j` : "—"} label="rythme actuel" tone="blue" />
-        <Metric value={dueErrors.length + dueToday.length} label="actions utiles aujourd’hui" tone={dueErrors.length ? "red" : "blue"} />
+        <Metric value={dueErrors.length + dueToday.length + (dueFlashcards.total ? 1 : 0)} label="actions utiles aujourd’hui" tone={dueErrors.length ? "red" : "blue"} />
       </section>
 
       <div className="dashboard-grid">
         <section className="surface work-queue">
           <div className="panel-header"><div><div className="section-kicker">Aujourd’hui</div><h2>Ton dossier de révision</h2></div><button className="text-action" onClick={() => onNavigate("agenda")}>Tout voir →</button></div>
           {dueErrors.length > 0 && <button className="queue-priority" onClick={() => onNavigate("pilotage")}><span className="queue-dot red" /><div><strong>{dueErrors.length} erreur{dueErrors.length > 1 ? "s" : ""} à transformer en réflexe</strong><small>Rappel actif, mini-cas, puis travail chronométré.</small></div><span>→</span></button>}
+          {dueFlashcards.total > 0 && <button className="queue-row" onClick={() => setReviewOpen(true)}><span className="queue-dot" style={{ background: "var(--accent-green)" }} /><div><small>révision éclair · ~{Math.max(1, Math.ceil(dueFlashcards.cards.length / 4))} min · sans IA</small><strong>{dueFlashcards.total} carte{dueFlashcards.total > 1 ? "s" : ""} à revoir</strong></div><span>Réviser →</span></button>}
           {dueToday.slice(0, dueErrors.length ? 2 : 3).map((item) => <button className="queue-row" key={item.chapter_id} onClick={() => { const chapter = chapters.find((entry) => entry.id === item.chapter_id); if (chapter) onQuickStart(chapter); }}><span className="queue-dot" /><div><small>{item.ue_code} · boîte {item.box_level}</small><strong>{item.chapter_name}</strong></div><span>Réviser →</span></button>)}
-          {!dueErrors.length && !dueToday.length && <div className="queue-empty"><strong>Aucun retard à combler.</strong><p>Continue avec le prochain chapitre ou une session libre.</p><button className="soft-button" onClick={() => onNavigate("timer")}>Lancer une session</button></div>}
+          {!dueErrors.length && !dueToday.length && !dueFlashcards.total && <div className="queue-empty"><strong>Aucun retard à combler.</strong><p>Continue avec le prochain chapitre ou une session libre.</p><button className="soft-button" onClick={() => onNavigate("timer")}>Lancer une session</button></div>}
         </section>
 
         <section className="surface weak-panel">
@@ -124,6 +127,16 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
           })}
         </div>
       </section>
+      {reviewOpen && (
+        <QuickReview
+          cards={dueFlashcards.cards}
+          total={dueFlashcards.total}
+          onClose={() => {
+            setReviewOpen(false);
+            refreshAll();
+          }}
+        />
+      )}
     </div>
   );
 }

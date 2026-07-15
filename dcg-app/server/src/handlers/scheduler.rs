@@ -105,6 +105,40 @@ pub fn next_schedule(current_box: i64, result: SessionResult, today: NaiveDate, 
     }
 }
 
+/// Interval in days for flashcard boxes 0..=5 — tighter than the chapter
+/// intervals since a card is one atomic fact, not a whole chapter. Box 0 is
+/// "just failed / brand new from an error note".
+pub const CARD_INTERVALS_DAYS: [i64; 6] = [1, 2, 4, 8, 15, 30];
+
+/// Per-card Leitner update for the daily "révision éclair" deck. Same shape
+/// and exam-awareness as the chapter-level `next_schedule` — one mental
+/// model at two granularities: a correct answer climbs one box, a miss falls
+/// all the way back to box 0, intervals halve inside the cram window, and a
+/// card is never scheduled past the exam itself. Cards deliberately never
+/// leave rotation ("mastered" just means a 30-day interval) — retention
+/// decays, so the schedule shouldn't pretend it doesn't.
+pub fn next_card_schedule(current_box: i64, correct: bool, today: NaiveDate, exam_date: Option<NaiveDate>) -> (i64, NaiveDate) {
+    let box_level = if correct { current_box + 1 } else { 0 }.clamp(0, 5);
+
+    let base_interval = CARD_INTERVALS_DAYS[box_level as usize];
+    let future_exam = exam_date.filter(|&exam| exam > today);
+    let days_to_exam = future_exam.map(|exam| (exam - today).num_days());
+
+    let interval = match days_to_exam {
+        Some(d) if d <= CRAM_WINDOW_DAYS => (base_interval / 2).max(1),
+        _ => base_interval,
+    };
+
+    let mut next_review_date = today + chrono::Duration::days(interval);
+    if let Some(exam) = future_exam {
+        if next_review_date > exam {
+            next_review_date = exam;
+        }
+    }
+
+    (box_level, next_review_date)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +290,51 @@ mod tests {
         // step aside rather than clamp the date backwards.
         let upd = next_schedule(1, result, date(2026, 1, 1), Some(date(2026, 1, 1)));
         assert_eq!(upd.next_review_date, date(2026, 1, 2));
+    }
+
+    // ── per-card schedule ──
+
+    #[test]
+    fn card_climbs_one_box_on_correct_and_uses_that_box_interval() {
+        let (box_level, next) = next_card_schedule(1, true, date(2026, 1, 1), None);
+        assert_eq!(box_level, 2);
+        assert_eq!(next, date(2026, 1, 5)); // +4d for box 2
+    }
+
+    #[test]
+    fn card_falls_to_box_zero_on_a_miss_and_comes_back_tomorrow() {
+        let (box_level, next) = next_card_schedule(4, false, date(2026, 1, 1), None);
+        assert_eq!(box_level, 0);
+        assert_eq!(next, date(2026, 1, 2));
+    }
+
+    #[test]
+    fn card_box_caps_at_five_and_never_leaves_rotation() {
+        let (box_level, next) = next_card_schedule(5, true, date(2026, 1, 1), None);
+        assert_eq!(box_level, 5);
+        assert_eq!(next, date(2026, 1, 31)); // +30d — long, but still scheduled
+    }
+
+    #[test]
+    fn out_of_range_stored_box_is_clamped_not_a_panic() {
+        // Pre-migration data capped boxes at 3, but nothing in SQLite stops a
+        // stray value; the index into CARD_INTERVALS_DAYS must stay in bounds.
+        let (box_level, _) = next_card_schedule(99, true, date(2026, 1, 1), None);
+        assert_eq!(box_level, 5);
+        let (box_level, _) = next_card_schedule(-7, false, date(2026, 1, 1), None);
+        assert_eq!(box_level, 0);
+    }
+
+    #[test]
+    fn card_interval_halves_inside_the_cram_window_and_clamps_to_the_exam() {
+        // Box 4 → 5 would be 30d, halved to 15 inside the window, but the
+        // exam is 10 days out — clamp to exam day.
+        let (box_level, next) = next_card_schedule(4, true, date(2026, 1, 1), Some(date(2026, 1, 11)));
+        assert_eq!(box_level, 5);
+        assert_eq!(next, date(2026, 1, 11));
+
+        // Box 1 → 2 is 4d, halved to 2 — fits before the exam untouched.
+        let (_, next) = next_card_schedule(1, true, date(2026, 1, 1), Some(date(2026, 1, 11)));
+        assert_eq!(next, date(2026, 1, 3));
     }
 }

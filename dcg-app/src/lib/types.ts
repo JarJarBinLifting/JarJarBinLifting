@@ -128,6 +128,25 @@ export interface FlashcardRow {
   last_reviewed_at: string | null;
 }
 
+/** One card in the daily "révision éclair" deck, with chapter/UE context. */
+export interface DueFlashcard {
+  id: number;
+  chapter_id: number;
+  chapter_name: string;
+  ue_code: string;
+  ue_color: string | null;
+  question: string;
+  answer: string;
+  box_level: number;
+}
+
+/** `total` counts everything due today; `cards` is capped at the daily deck
+ * limit (20) server-side — the overflow stays due and fills tomorrow's deck. */
+export interface DueFlashcardsResponse {
+  total: number;
+  cards: DueFlashcard[];
+}
+
 export interface DueChapter {
   chapter_id: number;
   chapter_name: string;
