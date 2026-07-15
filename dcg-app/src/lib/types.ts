@@ -75,6 +75,47 @@ export interface ModelUsageRow {
   output_tokens: number;
 }
 
+export type ExamSkill = "recall" | "method" | "application" | "technical" | "time";
+export type ErrorType = "knowledge" | "method" | "calculation" | "reading" | "time";
+export type ErrorSource = "manual" | "tutor" | "annale";
+export type ErrorStatus = "active" | "mastered";
+
+export interface ErrorNote {
+  id: number;
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  chapter_id: number | null;
+  chapter_name: string | null;
+  title: string;
+  error_type: ErrorType;
+  skill: ExamSkill;
+  my_reasoning: string | null;
+  correction: string | null;
+  source: ErrorSource;
+  ladder_step: number;
+  status: ErrorStatus;
+  next_review_date: string;
+}
+
+export interface SkillProfileRow {
+  ue_id: number;
+  skill: ExamSkill;
+  score: number | null;
+  note: string | null;
+  recorded_at: string | null;
+}
+
+export interface ExamScenarioRow {
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  current_mark: number | null;
+  target_mark: number | null;
+}
+
 export interface FlashcardRow {
   id: number;
   chapter_id: number;

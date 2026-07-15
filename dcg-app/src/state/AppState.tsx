@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import * as api from "../lib/api";
 import { DEFAULT_MODEL } from "../lib/models";
-import type { Chapter, DueChapter, QcmScoreRow, SessionLogRow, Ue } from "../lib/types";
+import type { Chapter, DueChapter, ErrorNote, ExamScenarioRow, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue } from "../lib/types";
 
 interface AppStateValue {
   ready: boolean;
@@ -10,6 +10,9 @@ interface AppStateValue {
   qcmScores: QcmScoreRow[];
   timerSessions: SessionLogRow[];
   dueChapters: DueChapter[];
+  errorNotes: ErrorNote[];
+  skillProfiles: SkillProfileRow[];
+  examScenario: ExamScenarioRow[];
   examDate: string | null;
   model: string;
   refreshAll: () => Promise<void>;
@@ -26,16 +29,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [qcmScores, setQcmScores] = useState<QcmScoreRow[]>([]);
   const [timerSessions, setTimerSessions] = useState<SessionLogRow[]>([]);
   const [dueChapters, setDueChapters] = useState<DueChapter[]>([]);
+  const [errorNotes, setErrorNotes] = useState<ErrorNote[]>([]);
+  const [skillProfiles, setSkillProfiles] = useState<SkillProfileRow[]>([]);
+  const [examScenario, setExamScenario] = useState<ExamScenarioRow[]>([]);
   const [examDate, setExamDateState] = useState<string | null>(null);
   const [model, setModelState] = useState<string>(DEFAULT_MODEL);
 
   const refreshAll = useCallback(async () => {
-    const [uesR, chaptersR, qcmR, sessionsR, dueR, examR, modelR] = await Promise.all([
+    const [uesR, chaptersR, qcmR, sessionsR, dueR, errorsR, skillsR, scenarioR, examR, modelR] = await Promise.all([
       api.listUes(),
       api.listAllChapters(),
       api.listAllQcmScores(),
       api.listTimerSessions(),
       api.listDueChapters(7),
+      api.listErrorNotes(),
+      api.listSkillProfiles(),
+      api.listExamScenario(),
       api.getMeta("exam_date"),
       api.getMeta("anthropic_model"),
     ]);
@@ -44,6 +53,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setQcmScores(qcmR);
     setTimerSessions(sessionsR);
     setDueChapters(dueR);
+    setErrorNotes(errorsR);
+    setSkillProfiles(skillsR);
+    setExamScenario(scenarioR);
     setExamDateState(examR);
     setModelState(modelR || DEFAULT_MODEL);
     setReady(true);
@@ -65,7 +77,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppStateCtx.Provider
-      value={{ ready, ues, chapters, qcmScores, timerSessions, dueChapters, examDate, model, refreshAll, setExamDate, setModel }}
+      value={{ ready, ues, chapters, qcmScores, timerSessions, dueChapters, errorNotes, skillProfiles, examScenario, examDate, model, refreshAll, setExamDate, setModel }}
     >
       {children}
     </AppStateCtx.Provider>

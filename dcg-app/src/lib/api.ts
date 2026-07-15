@@ -3,14 +3,20 @@ import type {
   Chapter,
   CompleteTutorSessionResult,
   DueChapter,
+  ErrorNote,
+  ErrorSource,
+  ErrorType,
+  ExamScenarioRow,
   FlashcardRow,
   LocalConfig,
   ModelUsageRow,
   QcmScoreRow,
   SessionLogRow,
+  SkillProfileRow,
   TutorSessionRow,
   Ue,
   WeakChapter,
+  ExamSkill,
 } from "./types";
 
 /// Every route this app talks to is same-origin (`/api/...`), served by the
@@ -126,6 +132,35 @@ export const addTimerSession = (
     ended_at: endedAt,
   });
 export const deleteTimerSession = (id: number) => del<void>(`/planner/sessions/${id}`);
+
+// ─── Exam pilotage ───
+
+export const listErrorNotes = () => get<ErrorNote[]>("/planner/errors");
+export const createErrorNote = (input: {
+  ue_id: number;
+  chapter_id: number | null;
+  title: string;
+  error_type: ErrorType;
+  skill: ExamSkill;
+  my_reasoning?: string | null;
+  correction?: string | null;
+  source?: ErrorSource;
+}) => post<ErrorNote>("/planner/errors", input);
+export const advanceErrorNote = (id: number) => post<ErrorNote>(`/planner/errors/${id}/advance`);
+export const deleteErrorNote = (id: number) => del<void>(`/planner/errors/${id}`);
+
+export const listSkillProfiles = () => get<SkillProfileRow[]>("/planner/skills");
+export const recordSkillAssessment = (input: {
+  ue_id: number;
+  chapter_id?: number | null;
+  skill: ExamSkill;
+  score: number;
+  note?: string | null;
+}) => post<void>("/planner/skills", input);
+
+export const listExamScenario = () => get<ExamScenarioRow[]>("/planner/exam-scenario");
+export const setExamScenario = (ueId: number, currentMark: number | null, targetMark: number | null) =>
+  put<void>(`/planner/exam-scenario/${ueId}`, { current_mark: currentMark, target_mark: targetMark });
 
 export const getMeta = (key: string) => get<string | null>(`/planner/meta/${key}`);
 export const setMeta = (key: string, value: string) => put<void>(`/planner/meta/${key}`, { value });

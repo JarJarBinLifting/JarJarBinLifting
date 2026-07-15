@@ -305,6 +305,41 @@ pub struct CompleteSessionRequest {
     pub overconfidence_count: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct StoredQcmMiss {
+    question: String,
+    theme: String,
+}
+
+/// A QCM miss is useful only if it comes back as a concrete future action.
+/// Keep the automatic diagnosis intentionally conservative (knowledge/recall)
+/// rather than pretending the app can infer the student's exact reasoning.
+/// The learner can add a more specific manual error note after an annale.
+fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i64, ue_id: i64, raw: Option<String>) -> rusqlite::Result<()> {
+    let Some(raw) = raw else { return Ok(()); };
+    let misses: Vec<StoredQcmMiss> = serde_json::from_str(&raw).unwrap_or_default();
+    for miss in misses {
+        let title = if miss.theme.trim().is_empty() {
+            miss.question
+        } else {
+            format!("{} — {}", miss.theme, miss.question)
+        };
+        conn.execute(
+            "INSERT OR IGNORE INTO error_notes
+                (ue_id, chapter_id, tutor_session_id, title, error_type, skill, correction, source)
+             VALUES (?1, ?2, ?3, ?4, 'knowledge', 'recall', ?5, 'tutor')",
+            params![
+                ue_id,
+                chapter_id,
+                tutor_session_id,
+                title,
+                "Reprendre la notion, l'expliquer sans support, puis refaire une application courte.",
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 /// The single write-back point from a finished tutor session into the
 /// planner's world: marks the session completed, logs the QCM score, updates
 /// the chapter-level Leitner schedule, and marks the chapter done.
@@ -315,13 +350,14 @@ pub async fn complete_tutor_session(State(state): State<AppState>, Path(tutor_se
 }
 
 fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: &CompleteSessionRequest) -> rusqlite::Result<CompleteTutorSessionResult> {
-    let (chapter_id, qcm_score, qcm_total): (i64, Option<i64>, Option<i64>) = conn.query_row(
-        "SELECT chapter_id, qcm_score, qcm_total FROM tutor_sessions WHERE id = ?1",
+    let (chapter_id, qcm_score, qcm_total, qcm_results_json): (i64, Option<i64>, Option<i64>, Option<String>) = conn.query_row(
+        "SELECT chapter_id, qcm_score, qcm_total, qcm_results_json FROM tutor_sessions WHERE id = ?1",
         params![tutor_session_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
     let qcm_score = qcm_score.unwrap_or(0);
     let qcm_total = qcm_total.unwrap_or(0);
+    let ue_id: i64 = conn.query_row("SELECT ue_id FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
 
     conn.execute(
         "UPDATE tutor_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
@@ -343,6 +379,8 @@ fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: 
         params![qcm_score_id],
         row_to_qcm,
     )?;
+
+    capture_tutor_misses(conn, tutor_session_id, chapter_id, ue_id, qcm_results_json)?;
 
     let current_box: i64 = conn
         .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
@@ -616,7 +654,9 @@ mod tests {
     fn complete_tutor_session_updates_status_schedule_and_chapter() {
         let conn = setup();
         conn.execute(
-            "UPDATE tutor_sessions SET qcm_score = 9, qcm_total = 10 WHERE id = 1",
+            "UPDATE tutor_sessions SET qcm_score = 9, qcm_total = 10,
+             qcm_results_json = '[{\"question\":\"Quel régime choisir ?\",\"theme\":\"TVA\"}]'
+             WHERE id = 1",
             [],
         )
         .unwrap();
@@ -636,6 +676,13 @@ mod tests {
 
         let scheduled_box: i64 = conn.query_row("SELECT box FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(scheduled_box, 2);
+
+        // A missed QCM question must become a concrete revision item, rather
+        // than disappearing into a historical percentage once the session is
+        // over. The migration's UNIQUE constraint also makes this safe if a
+        // completion callback is retried.
+        let errors: i64 = conn.query_row("SELECT COUNT(*) FROM error_notes WHERE tutor_session_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(errors, 1);
     }
 
     #[test]

@@ -6,7 +6,7 @@ mod models;
 use appstate::AppState;
 use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 use db::DbState;
 use rust_embed::RustEmbed;
@@ -62,6 +62,13 @@ fn api_router() -> Router<AppState> {
         .route("/planner/qcm-scores/:id", delete(handlers::planner::delete_qcm_score))
         .route("/planner/sessions", get(handlers::planner::list_timer_sessions).post(handlers::planner::add_timer_session))
         .route("/planner/sessions/:id", delete(handlers::planner::delete_timer_session))
+        // exam pilotage
+        .route("/planner/errors", get(handlers::planner::list_error_notes).post(handlers::planner::create_error_note))
+        .route("/planner/errors/:id", delete(handlers::planner::delete_error_note))
+        .route("/planner/errors/:id/advance", post(handlers::planner::advance_error_note))
+        .route("/planner/skills", get(handlers::planner::list_skill_profiles).post(handlers::planner::record_skill_assessment))
+        .route("/planner/exam-scenario", get(handlers::planner::list_exam_scenario))
+        .route("/planner/exam-scenario/:ue_id", put(handlers::planner::set_exam_scenario))
         .route("/planner/meta/:key", get(handlers::planner::get_meta).put(handlers::planner::set_meta))
         // tutor
         .route("/tutor/sessions/start", post(handlers::tutor::start_or_resume_tutor_session))

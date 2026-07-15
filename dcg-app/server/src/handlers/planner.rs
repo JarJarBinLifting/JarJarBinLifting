@@ -1,6 +1,6 @@
 use crate::appstate::{AppError, AppState};
 use crate::db::with_conn;
-use crate::models::{Chapter, QcmScoreRow, SessionLogRow, Ue};
+use crate::models::{Chapter, ErrorNote, ExamScenarioRow, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue};
 use axum::extract::{Path, State};
 use axum::Json;
 use rusqlite::{params, Connection};
@@ -436,6 +436,252 @@ pub async fn set_meta(State(state): State<AppState>, Path(key): Path<String>, Js
             "INSERT INTO app_meta (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, body.value],
+        )?;
+        Ok(())
+    })
+    .map_err(AppError)
+}
+
+// ─── Exam pilotage: error notebook, skills, and score scenarios ───
+
+fn row_to_error_note(row: &rusqlite::Row) -> rusqlite::Result<ErrorNote> {
+    Ok(ErrorNote {
+        id: row.get(0)?,
+        ue_id: row.get(1)?,
+        ue_code: row.get(2)?,
+        ue_name: row.get(3)?,
+        ue_color: row.get(4)?,
+        chapter_id: row.get(5)?,
+        chapter_name: row.get(6)?,
+        title: row.get(7)?,
+        error_type: row.get(8)?,
+        skill: row.get(9)?,
+        my_reasoning: row.get(10)?,
+        correction: row.get(11)?,
+        source: row.get(12)?,
+        ladder_step: row.get(13)?,
+        status: row.get(14)?,
+        next_review_date: row.get(15)?,
+    })
+}
+
+const ERROR_NOTE_COLUMNS: &str = "e.id, u.id, u.code, u.name, u.color, c.id, c.name,
+    e.title, e.error_type, e.skill, e.my_reasoning, e.correction, e.source,
+    e.ladder_step, e.status, e.next_review_date";
+
+pub async fn list_error_notes(State(state): State<AppState>) -> Result<Json<Vec<ErrorNote>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
+             JOIN ues u ON u.id = e.ue_id
+             LEFT JOIN chapters c ON c.id = e.chapter_id
+             ORDER BY CASE e.status WHEN 'active' THEN 0 ELSE 1 END,
+                      e.next_review_date ASC, e.id DESC"
+        ))?;
+        let rows = stmt.query_map([], row_to_error_note)?;
+        rows.collect()
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateErrorNoteRequest {
+    pub ue_id: i64,
+    pub chapter_id: Option<i64>,
+    pub title: String,
+    pub error_type: String,
+    pub skill: String,
+    pub my_reasoning: Option<String>,
+    pub correction: Option<String>,
+    pub source: Option<String>,
+}
+
+pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<CreateErrorNoteRequest>) -> Result<Json<ErrorNote>, AppError> {
+    let title = body.title.trim().to_string();
+    if title.is_empty() {
+        return Err(AppError("Le point d'erreur doit être renseigné".into()));
+    }
+    with_conn(&state.db, |conn| {
+        conn.execute(
+            "INSERT INTO error_notes (ue_id, chapter_id, title, error_type, skill, my_reasoning, correction, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                body.ue_id,
+                body.chapter_id,
+                title,
+                body.error_type,
+                body.skill,
+                body.my_reasoning.filter(|s| !s.trim().is_empty()),
+                body.correction.filter(|s| !s.trim().is_empty()),
+                body.source.unwrap_or_else(|| "manual".into()),
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        conn.query_row(
+            &format!(
+                "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
+                 JOIN ues u ON u.id = e.ue_id
+                 LEFT JOIN chapters c ON c.id = e.chapter_id
+                 WHERE e.id = ?1"
+            ),
+            params![id],
+            row_to_error_note,
+        )
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+/// Advance a mistake through the revision ladder. The first four steps map to
+/// recall, guided application, independent mini-case, and timed extract. A
+/// completed timed extract marks the mistake mastered; it stays visible as a
+/// useful record but no longer appears in the due work.
+pub async fn advance_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Json<ErrorNote>, AppError> {
+    with_conn(&state.db, |conn| {
+        let (step, status): (i64, String) = conn.query_row(
+            "SELECT ladder_step, status FROM error_notes WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if status == "active" {
+            let (next_step, next_status, delay_days) = match step {
+                0 => (1, "active", 1),
+                1 => (2, "active", 3),
+                2 => (3, "active", 7),
+                _ => (4, "mastered", 0),
+            };
+            conn.execute(
+                "UPDATE error_notes SET ladder_step = ?1, status = ?2,
+                    next_review_date = date('now', ?3), updated_at = datetime('now')
+                 WHERE id = ?4",
+                params![next_step, next_status, format!("+{delay_days} days"), id],
+            )?;
+        }
+        conn.query_row(
+            &format!(
+                "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
+                 JOIN ues u ON u.id = e.ue_id
+                 LEFT JOIN chapters c ON c.id = e.chapter_id
+                 WHERE e.id = ?1"
+            ),
+            params![id],
+            row_to_error_note,
+        )
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+pub async fn delete_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+    with_conn(&state.db, |conn| {
+        conn.execute("DELETE FROM error_notes WHERE id = ?1", params![id])?;
+        Ok(())
+    })
+    .map_err(AppError)
+}
+
+pub async fn list_skill_profiles(State(state): State<AppState>) -> Result<Json<Vec<SkillProfileRow>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT u.id, s.skill, a.score, a.note, a.recorded_at
+             FROM ues u
+             CROSS JOIN (
+                 SELECT 'recall' AS skill UNION ALL SELECT 'method' UNION ALL
+                 SELECT 'application' UNION ALL SELECT 'technical' UNION ALL SELECT 'time'
+             ) s
+             LEFT JOIN skill_assessments a ON a.id = (
+                 SELECT a2.id FROM skill_assessments a2
+                 WHERE a2.ue_id = u.id AND a2.skill = s.skill
+                 ORDER BY a2.recorded_at DESC, a2.id DESC LIMIT 1
+             )
+             ORDER BY u.position, s.skill",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SkillProfileRow {
+                ue_id: row.get(0)?,
+                skill: row.get(1)?,
+                score: row.get(2)?,
+                note: row.get(3)?,
+                recorded_at: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordSkillRequest {
+    pub ue_id: i64,
+    pub chapter_id: Option<i64>,
+    pub skill: String,
+    pub score: i64,
+    pub note: Option<String>,
+}
+
+pub async fn record_skill_assessment(State(state): State<AppState>, Json(body): Json<RecordSkillRequest>) -> Result<(), AppError> {
+    if !(1..=4).contains(&body.score) {
+        return Err(AppError("La compétence doit être notée de 1 à 4".into()));
+    }
+    with_conn(&state.db, |conn| {
+        conn.execute(
+            "INSERT INTO skill_assessments (ue_id, chapter_id, skill, score, note)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![body.ue_id, body.chapter_id, body.skill, body.score, body.note.filter(|s| !s.trim().is_empty())],
+        )?;
+        Ok(())
+    })
+    .map_err(AppError)
+}
+
+fn row_to_exam_scenario(row: &rusqlite::Row) -> rusqlite::Result<ExamScenarioRow> {
+    Ok(ExamScenarioRow {
+        ue_id: row.get(0)?,
+        ue_code: row.get(1)?,
+        ue_name: row.get(2)?,
+        ue_color: row.get(3)?,
+        current_mark: row.get(4)?,
+        target_mark: row.get(5)?,
+    })
+}
+
+pub async fn list_exam_scenario(State(state): State<AppState>) -> Result<Json<Vec<ExamScenarioRow>>, AppError> {
+    with_conn(&state.db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT u.id, u.code, u.name, u.color, es.current_mark, es.target_mark
+             FROM ues u LEFT JOIN exam_scenarios es ON es.ue_id = u.id
+             ORDER BY u.position",
+        )?;
+        let rows = stmt.query_map([], row_to_exam_scenario)?;
+        rows.collect()
+    })
+    .map(Json)
+    .map_err(AppError)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetExamScenarioRequest {
+    pub current_mark: Option<f64>,
+    pub target_mark: Option<f64>,
+}
+
+pub async fn set_exam_scenario(State(state): State<AppState>, Path(ue_id): Path<i64>, Json(body): Json<SetExamScenarioRequest>) -> Result<(), AppError> {
+    for mark in [body.current_mark, body.target_mark].into_iter().flatten() {
+        if !(0.0..=20.0).contains(&mark) {
+            return Err(AppError("Une note doit être comprise entre 0 et 20".into()));
+        }
+    }
+    with_conn(&state.db, |conn| {
+        conn.execute(
+            "INSERT INTO exam_scenarios (ue_id, current_mark, target_mark)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(ue_id) DO UPDATE SET
+                 current_mark = excluded.current_mark,
+                 target_mark = excluded.target_mark,
+                 updated_at = datetime('now')",
+            params![ue_id, body.current_mark, body.target_mark],
         )?;
         Ok(())
     })

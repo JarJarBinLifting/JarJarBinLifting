@@ -1,8 +1,9 @@
-export type ShellView = "dash" | "ue" | "agenda" | "timer" | "settings";
+export type ShellView = "dash" | "ue" | "agenda" | "pilotage" | "timer" | "settings";
 
 const ITEMS: { id: ShellView; label: string }[] = [
   { id: "dash", label: "Accueil" },
   { id: "agenda", label: "Agenda" },
+  { id: "pilotage", label: "Pilotage" },
   { id: "timer", label: "Chrono" },
   { id: "settings", label: "Réglages" },
 ];

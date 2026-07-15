@@ -131,3 +131,44 @@ pub struct ModelUsageRow {
     pub input_tokens: i64,
     pub output_tokens: i64,
 }
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ErrorNote {
+    pub id: i64,
+    pub ue_id: i64,
+    pub ue_code: String,
+    pub ue_name: String,
+    pub ue_color: Option<String>,
+    pub chapter_id: Option<i64>,
+    pub chapter_name: Option<String>,
+    pub title: String,
+    pub error_type: String,
+    pub skill: String,
+    pub my_reasoning: Option<String>,
+    pub correction: Option<String>,
+    pub source: String,
+    pub ladder_step: i64,
+    pub status: String,
+    pub next_review_date: String,
+}
+
+/// The latest self-assessed evidence for one exam skill in one UE. A missing
+/// row deliberately means "not assessed yet", never a fabricated zero.
+#[derive(Debug, Serialize, Clone)]
+pub struct SkillProfileRow {
+    pub ue_id: i64,
+    pub skill: String,
+    pub score: Option<i64>,
+    pub note: Option<String>,
+    pub recorded_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ExamScenarioRow {
+    pub ue_id: i64,
+    pub ue_code: String,
+    pub ue_name: String,
+    pub ue_color: Option<String>,
+    pub current_mark: Option<f64>,
+    pub target_mark: Option<f64>,
+}

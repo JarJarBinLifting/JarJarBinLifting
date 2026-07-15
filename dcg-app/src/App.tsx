@@ -6,6 +6,7 @@ import { Nav, type ShellView } from "./components/shell/Nav";
 import { Dashboard } from "./components/shell/Dashboard";
 import { UEDetail } from "./components/shell/UEDetail";
 import { Agenda } from "./components/shell/Agenda";
+import { Pilotage } from "./components/shell/Pilotage";
 import { Timer } from "./components/shell/Timer";
 import { SettingsScreen } from "./components/settings/SettingsScreen";
 import { TutorModal } from "./components/tutor/TutorModal";
@@ -38,6 +39,7 @@ function MainApp() {
           <UEDetail ue={selectedUe} onBack={() => navigate("dash")} onStudyChapter={(c) => setStudyingChapter(c)} />
         )}
         {view === "agenda" && <Agenda onStudyChapter={(c) => setStudyingChapter(c)} />}
+        {view === "pilotage" && <Pilotage />}
         {view === "timer" && <Timer />}
         {view === "settings" && <SettingsScreen />}
       </div>

@@ -54,7 +54,7 @@ export function Dashboard({
   onNavigate: (v: ShellView) => void;
   onQuickStart: (chapter: Chapter) => void;
 }) {
-  const { ues, chapters, qcmScores, timerSessions, dueChapters, examDate } = useAppState();
+  const { ues, chapters, qcmScores, timerSessions, dueChapters, errorNotes, examDate } = useAppState();
   const { theme, toggle } = useTheme();
   const [, forceTick] = useState(0);
   const [weak, setWeak] = useState<WeakChapter[]>([]);
@@ -73,6 +73,7 @@ export function Dashboard({
   const gAvg = avgScorePct(qcmScores);
   const cd = examDate ? countdownTo(examDate) : null;
   const dueToday = dueChapters.filter((d) => d.next_review_date <= new Date().toISOString().slice(0, 10));
+  const dueErrors = errorNotes.filter((e) => e.status === "active" && e.next_review_date <= new Date().toISOString().slice(0, 10));
 
   const activityDates = [...timerSessions.map((s) => s.ended_at), ...qcmScores.map((s) => s.date)];
   const streak = computeStudyStreak(activityDates);
@@ -160,6 +161,17 @@ export function Dashboard({
             <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>{quickStartUe.code} · {quickStartUe.name}</div>
           </div>
           <span style={{ fontSize: 22, fontWeight: 700, flexShrink: 0 }}>→</span>
+        </button>
+      )}
+
+      {dueErrors.length > 0 && (
+        <button
+          onClick={() => onNavigate("pilotage")}
+          style={{ width: "100%", marginBottom: 16, textAlign: "left", background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-red)", borderRadius: 3, padding: "13px 16px", color: "var(--text)" }}
+        >
+          <div style={{ color: "var(--accent-red)", fontSize: 10, fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>POINTS À NE PAS LAISSER REVENIR</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{dueErrors.length} erreur{dueErrors.length > 1 ? "s" : ""} à transformer en réflexe</div>
+          <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 3 }}>Rappel actif, mini-cas, puis extrait chronométré →</div>
         </button>
       )}
 
