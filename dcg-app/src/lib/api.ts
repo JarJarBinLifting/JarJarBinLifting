@@ -28,11 +28,20 @@ import type {
 /// Every route this app talks to is same-origin (`/api/...`), served by the
 /// local Rust server — in dev, Vite proxies `/api` to it (see vite.config.ts).
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // fetch() only rejects on network-level failures — for a localhost app
+    // that means the server process is gone (console window closed?) or it
+    // reset the connection. Say that, instead of the browser's opaque
+    // "Failed to fetch".
+    throw new Error("Connexion au serveur local impossible — vérifie que DCG Étude (la fenêtre noire) est toujours ouvert, puis recharge la page.");
+  }
 
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;

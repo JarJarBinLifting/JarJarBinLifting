@@ -139,8 +139,14 @@ async fn main() {
         handlers::backups::run_auto_backup_if_due(&state);
     }
 
+    // axum's default body limit is 2 MB — a pasted PDF chapter travels as
+    // base64 inside the /anthropic/call JSON body (~1.33× the file size), so
+    // a 5 MB course PDF blows straight past it and the reset connection
+    // surfaces in the browser as an opaque "Failed to fetch". 40 MB covers
+    // anything Anthropic itself would accept (its request cap is 32 MB);
+    // the restore-upload route keeps its own larger per-route limit.
     let app = Router::new()
-        .nest("/api", api_router())
+        .nest("/api", api_router().layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
         .fallback(static_handler)
         .with_state(state);
 

@@ -18,13 +18,27 @@ export function InputPhase({
   const [diff, setDiff] = useState<Diff>(DIFFS[0]);
   const [text, setText] = useState("");
   const [fname, setFname] = useState("");
+  const [fileError, setFileError] = useState("");
   const [fdata, setFdata] = useState<StartConfig["fileContent"]>(null);
   const [adhd, setAdhd] = useState(false);
   const fref = useRef<HTMLInputElement>(null);
 
+  // Anthropic caps requests at 32 MB (and PDFs at 100 pages); past ~28 MB of
+  // file the base64-encoded body would exceed that anyway, so reject early
+  // with a real explanation instead of letting the request fail opaquely.
+  const MAX_FILE_BYTES = 28 * 1024 * 1024;
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (f.size > MAX_FILE_BYTES) {
+      setFileError(`« ${f.name} » fait ${(f.size / 1024 / 1024).toFixed(1)} Mo — trop lourd pour l'API (limite ~28 Mo). Découpe le PDF ou colle le texte du chapitre.`);
+      setFname("");
+      setFdata(null);
+      e.target.value = "";
+      return;
+    }
+    setFileError("");
     setFname(f.name);
     const r = new FileReader();
     r.onload = () => {
@@ -69,6 +83,7 @@ export function InputPhase({
         </button>
         {fname && <span style={{ fontSize: 11, color: "var(--t-ok)", fontWeight: 500 }}>{fname}</span>}
       </div>
+      {fileError && <p style={{ marginTop: 8, fontSize: 12, color: "var(--t-err)", lineHeight: 1.5 }}>{fileError}</p>}
 
       <div style={{ marginTop: 16 }}>
         <label style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Difficulté du QCM</label>
