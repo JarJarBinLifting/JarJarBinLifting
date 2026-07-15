@@ -93,9 +93,17 @@ async fn call_anthropic_inner(
 ) -> Result<AnthropicResult, String> {
     let key = read_api_key().ok_or_else(|| "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string())?;
 
+    // `thinking` must be explicitly disabled: on claude-sonnet-5 an omitted
+    // `thinking` field runs *adaptive* thinking, and thinking tokens count
+    // against `max_tokens`. On a big chapter PDF the model can spend the whole
+    // budget thinking and return zero text (`stop_reason: "max_tokens"`,
+    // empty `content`) — the "Réponse vide du modèle" failure. Every call in
+    // this app is a one-shot strict-JSON generation whose thinking would
+    // never be shown anyway, so give the entire budget to the answer.
     let mut body = serde_json::json!({
         "model": model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
         "max_tokens": max_tokens.unwrap_or(4096),
+        "thinking": {"type": "disabled"},
         "system": system,
         "messages": messages,
     });
