@@ -121,15 +121,15 @@ export function Pilotage() {
   };
 
   return (
-    <div style={{ padding: 14, maxWidth: 920, margin: "0 auto", paddingBottom: 92 }}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>Pilotage examen</div>
-        <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.55, maxWidth: 650 }}>
+    <div className="desktop-page pilotage-page" style={{ paddingBottom: 32 }}>
+      <div className="work-header" style={{ marginBottom: 24 }}>
+        <div><div className="eyebrow">Lecture des risques</div><div className="work-title" style={{ fontSize: 34 }}>Pilotage examen</div>
+        <p className="work-lead">
           Transforme chaque erreur en une prochaine action. Les notes ci-dessous sont un scénario sur tes UE suivies, pas une prédiction officielle.
-        </p>
+        </p></div>
       </div>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-red)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
+      <section className="pilotage-panel pilotage-priority surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-red)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: dueErrors.length ? 12 : 0 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 800, color: "var(--accent-red)", letterSpacing: 1.2, marginBottom: 4 }}>À TRAITER MAINTENANT</div>
@@ -144,7 +144,7 @@ export function Pilotage() {
         {dueErrors.slice(0, 3).map((error) => <ErrorRow key={error.id} error={error} onAdvance={advance} compact />)}
       </section>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
+      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Compétences d'examen</div>
@@ -181,7 +181,7 @@ export function Pilotage() {
         </div>
       </section>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
+      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
         <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Scénario de réussite</div>
         <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "4px 0 14px" }}>
           Saisis une note obtenue ou une estimation honnête, puis une cible. Une note sous 6 est un risque à neutraliser en priorité.
@@ -203,7 +203,7 @@ export function Pilotage() {
         </div>
       </section>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18 }}>
+      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
           <div><div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Carnet d'erreurs</div><p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>{activeErrors.length} erreur{activeErrors.length > 1 ? "s" : ""} active{activeErrors.length > 1 ? "s" : ""} · {errorNotes.filter((e) => e.status === "mastered").length} maîtrisée{errorNotes.filter((e) => e.status === "mastered").length > 1 ? "s" : ""}</p></div>
           <button onClick={() => setFormOpen(true)} style={{ background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "8px 11px", fontSize: 11, color: "var(--text)", fontWeight: 700 }}>Ajouter</button>
@@ -213,7 +213,7 @@ export function Pilotage() {
 
       {formOpen && (
         <div onClick={() => setFormOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.72)", padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, width: "100%", maxHeight: "90vh", overflowY: "auto", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20 }}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, width: "100%", maxHeight: "90vh", overflowY: "auto", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20 }}>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>Noter une erreur utile</div>
             <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>Décris la décision ou le raisonnement qui t'a fait perdre des points. Le carnet crée ensuite les étapes de révision.</p>
             <div style={{ display: "grid", gap: 11 }}>

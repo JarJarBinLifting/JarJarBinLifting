@@ -25,10 +25,10 @@ export function SettingsScreen() {
   useEffect(refresh, []);
 
   return (
-    <div style={{ padding: 14, maxWidth: 640, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 20, color: "var(--text)" }}>Réglages</div>
+    <div className="desktop-page narrow settings-page">
+      <div className="work-header" style={{ marginBottom: 24 }}><div><div className="eyebrow">Configuration personnelle</div><div className="work-title" style={{ fontSize: 34 }}>Réglages</div><div className="work-lead">Tout reste sur cette machine : tes données, tes préférences et ta clé de travail.</div></div></div>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+      <section className="settings-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Tes données</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
           Tout est stocké localement dans un seul fichier SQLite, créé automatiquement au premier lancement.
@@ -41,7 +41,7 @@ export function SettingsScreen() {
         <ExportButton />
       </section>
 
-      <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+      <section className="settings-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Clé API Anthropic</div>
         <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
           Le tuteur IA a besoin d'une clé API Anthropic (console.anthropic.com), facturée à l'usage — ce n'est pas ton
@@ -174,7 +174,7 @@ function UsageSection() {
   const total = (rows ?? []).reduce((s, r) => s + r.input_tokens + r.output_tokens, 0);
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+    <section className="settings-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Utilisation</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
         Jetons consommés par le tuteur, cumulés depuis le début — directement depuis les réponses de l'API, donc exacts.
@@ -210,7 +210,7 @@ function ModelSection() {
   const [saving, setSaving] = useState(false);
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
+    <section className="settings-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Modèle du tuteur</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>
         Une session complète déclenche une dizaine d'appels au modèle (histoire, feedback, flashcards, QCM, dialogue,
@@ -259,7 +259,7 @@ function ExamDateSection() {
   const [draft, setDraft] = useState(examDate ?? "");
 
   return (
-    <section style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20 }}>
+    <section className="settings-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Date d'examen</div>
       <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>Affiche un compte à rebours sur le tableau de bord.</p>
       <div style={{ display: "flex", gap: 8 }}>

@@ -15,6 +15,7 @@ function DueRow({ d, onStudy }: { d: DueChapter; onStudy: (chapterId: number, ue
   const outcome = d.last_outcome ? OUTCOME_META[d.last_outcome] : null;
   return (
     <div
+      className="agenda-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -50,6 +51,7 @@ function WeakRow({ w, onStudy }: { w: WeakChapter; onStudy: (chapterId: number, 
   const outcome = w.last_outcome ? OUTCOME_META[w.last_outcome] : null;
   return (
     <div
+      className="agenda-row agenda-row-weak"
       style={{
         display: "flex",
         alignItems: "center",
@@ -106,9 +108,9 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
   };
 
   return (
-    <div style={{ padding: 14, maxWidth: 920, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>Agenda de révision</div>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
+    <div className="desktop-page agenda-page">
+      <div className="work-header" style={{ marginBottom: 24 }}><div><div className="eyebrow">Rythme de révision</div><div className="work-title" style={{ fontSize: 34 }}>Agenda de révision</div></div></div>
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24, maxWidth: 650 }}>
         Chaque chapitre revient automatiquement selon ta performance — pas de planning fixe à tenir à jour.
       </div>
 
@@ -146,6 +148,7 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
 
       <button
         onClick={() => refreshAll()}
+        className="agenda-refresh soft-button"
         style={{ width: "100%", marginTop: 8, padding: 10, background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, fontSize: 12, color: "var(--muted)" }}
       >
         ↺ Rafraîchir
@@ -157,8 +160,8 @@ export function Agenda({ onStudyChapter }: { onStudyChapter: (chapter: Chapter) 
 function Section({ title, color, empty, children }: { title: string; color: string; empty: string; children: React.ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : !!children;
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+    <div className="agenda-section surface" style={{ marginBottom: 20 }}>
+      <div className="agenda-section-header" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ width: 3, height: 13, background: color, flexShrink: 0 }} />
         <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text)", letterSpacing: 0.6, textTransform: "uppercase" }}>{title}</span>
       </div>

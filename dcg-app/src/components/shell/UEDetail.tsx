@@ -45,8 +45,8 @@ export function UEDetail({
   };
 
   return (
-    <div style={{ padding: 14, maxWidth: 920, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+    <div className="desktop-page ue-detail-page">
+      <div className="ue-heading" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <button
           onClick={onBack}
           style={{ background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 2, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: "var(--text)" }}
@@ -62,24 +62,24 @@ export function UEDetail({
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 26, fontWeight: 700, color: ue.color ?? undefined, flexShrink: 0 }}>{pct}%</div>
       </div>
 
-      <div style={{ background: "var(--track)", borderRadius: 2, height: 6, marginBottom: 18, overflow: "hidden" }}>
+      <div className="ue-progress-track" style={{ background: "var(--track)", borderRadius: 2, height: 6, marginBottom: 18, overflow: "hidden" }}>
         <div className="pfill" style={{ width: `${pct}%`, height: "100%", background: ue.color ?? undefined }} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+      <div className="ue-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         {[
           { l: "Terminés", v: ueChapters.filter((c) => c.status === "done").length, c: "var(--accent-green)" },
           { l: "En cours", v: ueChapters.filter((c) => c.status === "ongoing").length, c: "var(--accent-yellow)" },
           { l: "À faire", v: ueChapters.filter((c) => c.status === "todo").length, c: "var(--muted)" },
         ].map(({ l, v, c }) => (
-          <div key={l} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, textAlign: "center", padding: "14px 10px" }}>
+          <div key={l} className="ue-stat" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, textAlign: "center", padding: "14px 10px" }}>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 26, fontWeight: 700, color: c, lineHeight: 1 }}>{v}</div>
             <div style={{ fontSize: 9, color: "var(--muted)", fontWeight: 700, letterSpacing: 0.5, marginTop: 5 }}>{l.toUpperCase()}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 14 }}>
+      <div className="ue-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Chapitres</div>
           <div style={{ fontSize: 11, color: "var(--muted)" }}>Cliquer le statut pour le changer · bouton pour étudier</div>
@@ -90,6 +90,7 @@ export function UEDetail({
             return (
               <div
                 key={ch.id}
+                className="ue-chapter-row"
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 2, background: s.bg, border: `1px solid ${s.color}33` }}
               >
                 <div
@@ -114,7 +115,7 @@ export function UEDetail({
         </div>
       </div>
 
-      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 14 }}>
+      <div className="ue-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Historique QCM</div>
           {avg !== null && <span style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 700 }}>∅ {avg}%</span>}
@@ -166,7 +167,7 @@ export function UEDetail({
             { k: "points_faibles" as const, l: "Points faibles", ph: "Ex : Procédures collectives…", c: "var(--accent-red)" },
           ]
         ).map(({ k, l, ph, c }) => (
-          <div key={k} style={{ background: "var(--card)", border: `1px solid ${c}44`, borderRadius: 3, padding: 20 }}>
+          <div key={k} className="ue-note-panel surface" style={{ background: "var(--card)", border: `1px solid ${c}44`, borderRadius: 3, padding: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: c, marginBottom: 10 }}>{l}</div>
             <textarea
               value={notesDraft[k]}
@@ -180,7 +181,7 @@ export function UEDetail({
         ))}
       </div>
 
-      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 20 }}>
+      <div className="ue-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 20 }}>
         <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Notes personnelles</div>
         <textarea
           value={notesDraft.notes}
@@ -238,7 +239,7 @@ function AddScoreModal({
       onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, maxWidth: 380, width: "100%", padding: 24 }}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, maxWidth: 380, width: "100%", padding: 24 }}>
         <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, marginBottom: 20, color: "var(--text)" }}>Ajouter un score QCM</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>

@@ -32,8 +32,9 @@ function MainApp() {
   const chapterUe = studyingChapter ? ues.find((u) => u.id === studyingChapter.ue_id) : null;
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <div style={{ paddingBottom: 72 }}>
+    <div className="app-shell">
+      <Nav view={view} onNavigate={navigate} />
+      <main className="app-main">
         {view === "dash" && <Dashboard onOpenUe={openUe} onNavigate={navigate} onQuickStart={(c) => setStudyingChapter(c)} />}
         {view === "ue" && selectedUe && (
           <UEDetail ue={selectedUe} onBack={() => navigate("dash")} onStudyChapter={(c) => setStudyingChapter(c)} />
@@ -42,8 +43,7 @@ function MainApp() {
         {view === "pilotage" && <Pilotage />}
         {view === "timer" && <Timer />}
         {view === "settings" && <SettingsScreen />}
-      </div>
-      <Nav view={view} onNavigate={navigate} />
+      </main>
 
       <ErrorBoundary
         onReset={() => {

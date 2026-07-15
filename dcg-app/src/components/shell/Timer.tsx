@@ -58,12 +58,11 @@ export function Timer() {
   };
 
   return (
-    <div style={{ padding: 14, maxWidth: 600, margin: "0 auto" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>Chronomètre de session</div>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24 }}>Session DCG standard : 3 heures. Chaque minute compte !</div>
+    <div className="desktop-page narrow timer-page">
+      <div className="work-header" style={{ marginBottom: 24 }}><div><div className="eyebrow">Travail concentré</div><div className="work-title" style={{ fontSize: 34 }}>Chronomètre de session</div><div className="work-lead">Session DCG standard : 3 heures. Pose un cadre, puis travaille sans te disperser.</div></div></div>
 
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
-        <div style={{ position: "relative", width: 216, height: 216 }}>
+      <div className="timer-dial-wrap" style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
+        <div className="timer-dial surface" style={{ position: "relative", width: 216, height: 216 }}>
           <svg width="216" height="216" style={{ transform: "rotate(-90deg)" }}>
             <circle cx="108" cy="108" r={r} fill="none" stroke="var(--track)" strokeWidth="13" />
             <circle
@@ -104,7 +103,7 @@ export function Timer() {
         </select>
       </div>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div className="timer-controls" style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <button
           onClick={() => setRunning((r) => !r)}
           style={{ flex: 1, fontSize: 14, padding: 14, fontWeight: 700, background: running ? "var(--accent-red)" : "var(--accent-green)", color: "#fff", border: "none", borderRadius: 2 }}
@@ -119,7 +118,7 @@ export function Timer() {
         </button>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
+      <div className="timer-presets" style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 800, letterSpacing: 1.5, marginBottom: 8 }}>DURÉE RAPIDE</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {PRESETS.map(([l, s]) => (
@@ -148,7 +147,7 @@ export function Timer() {
       </div>
 
       {timerSessions.length > 0 && (
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 20 }}>
+        <div className="timer-history surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 20 }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Sessions récentes</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {timerSessions.slice(0, 8).map((s) => {
