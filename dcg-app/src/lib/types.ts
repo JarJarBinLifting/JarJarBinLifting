@@ -196,6 +196,38 @@ export interface AnnaleAttempt {
   completed_at: string | null;
 }
 
+export interface UeWeekTime {
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  minutes: number;
+}
+
+export interface WeeklyAnnale {
+  title: string;
+  ue_code: string;
+  score: number | null;
+  total: number | null;
+}
+
+/** The Sunday-ritual summary — pure SQL over recorded data, no LLM. */
+export interface WeeklyBilan {
+  week_start: string;
+  minutes_this_week: number;
+  minutes_last_week: number;
+  per_ue: UeWeekTime[];
+  tutor_sessions_completed: number;
+  cards_reviewed: number;
+  quiz_answered: number;
+  qcm_avg_pct: number | null;
+  errors_created: number;
+  errors_mastered: number;
+  errors_stalled: number;
+  annales: WeeklyAnnale[];
+  due_next_week: number;
+}
+
 export interface BackupInfo {
   file_name: string;
   size_bytes: number;

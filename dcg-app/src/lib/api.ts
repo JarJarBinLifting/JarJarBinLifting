@@ -8,6 +8,7 @@ import type {
   DueFlashcardsResponse,
   DueQuizResponse,
   QuizAnswerResult,
+  WeeklyBilan,
   ErrorNote,
   ErrorSource,
   ErrorType,
@@ -245,6 +246,9 @@ export const completeAnnale = (id: number, correctionJson: string, elapsedSecond
   post<AnnaleAttempt>(`/annales/${id}/complete`, { correction_json: correctionJson, elapsed_seconds: elapsedSeconds });
 export const abandonAnnale = (id: number) => post<void>(`/annales/${id}/abandon`);
 export const deleteAnnale = (id: number) => del<void>(`/annales/${id}`);
+
+// ─── bilan hebdomadaire ───
+export const getWeeklyBilan = () => get<WeeklyBilan>("/planner/weekly-bilan");
 
 // ─── backups ───
 export const listBackups = () => get<BackupInfo[]>("/settings/backups");

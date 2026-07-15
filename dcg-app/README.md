@@ -109,3 +109,13 @@ backup, since everything lives in that one local file.
   file (integrity check + migration version), and rolls back if the
   restored file can't be opened. Restore also accepts an uploaded file
   (e.g. a manual export from Downloads).
+- **Bilan de la semaine** (`server/src/handlers/bilan.rs`, button on the
+  Dashboard): the Sunday ritual — study time this week vs last (with a
+  per-UE breakdown that shows untouched UEs explicitly), sessions/cards/
+  quiz counts, QCM average, error-notebook movement (created, mastered,
+  stalled on the ladder), the week's annale scores, and what the next 7
+  days ask. Pure SQL, opens instantly.
+- **Fully offline UI**: the four fonts are self-hosted (latin-subset
+  woff2, ~250 KB, embedded in the binary via the Vite build) — the only
+  network dependency left in the entire app is api.anthropic.com for the
+  tutor.

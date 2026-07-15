@@ -6,6 +6,7 @@ import { avgScorePct, chapterProgress, computeStudyStreak, countdownTo, daysSinc
 import type { Chapter, Ue, WeakChapter } from "../../lib/types";
 import { QuickReview } from "./QuickReview";
 import { QuickQuiz } from "./QuickQuiz";
+import { WeeklyBilanModal } from "./WeeklyBilan";
 import type { ShellView } from "./Nav";
 
 const GAP_THRESHOLD_DAYS = 3;
@@ -36,6 +37,7 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
   const [weak, setWeak] = useState<WeakChapter[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [bilanOpen, setBilanOpen] = useState(false);
   const [, tick] = useState(0);
 
   useEffect(() => { api.listWeakChapters().then(setWeak); }, [dueChapters, qcmScores]);
@@ -64,7 +66,10 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
           <h1 className="work-title">Bonjour, Amadou.</h1>
           <p className="work-lead">Un espace calme pour voir l’essentiel, travailler une chose à la fois et progresser vers l’examen.</p>
         </div>
-        <button className="soft-button" onClick={toggle}>{theme === "dark" ? "Mode clair" : "Mode sombre"}</button>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button className="soft-button" onClick={() => setBilanOpen(true)}>Bilan de la semaine</button>
+          <button className="soft-button" onClick={toggle}>{theme === "dark" ? "Mode clair" : "Mode sombre"}</button>
+        </div>
       </header>
 
       <section className="focus-board surface">
@@ -130,6 +135,7 @@ export function Dashboard({ onOpenUe, onNavigate, onQuickStart }: { onOpenUe: (u
           })}
         </div>
       </section>
+      {bilanOpen && <WeeklyBilanModal onClose={() => setBilanOpen(false)} onNavigate={onNavigate} />}
       {quizOpen && (
         <QuickQuiz
           items={dueQuiz.items}

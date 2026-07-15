@@ -70,6 +70,7 @@ fn api_router() -> Router<AppState> {
         .route("/planner/exam-scenario", get(handlers::planner::list_exam_scenario))
         .route("/planner/exam-scenario/:ue_id", put(handlers::planner::set_exam_scenario))
         .route("/planner/meta/:key", get(handlers::planner::get_meta).put(handlers::planner::set_meta))
+        .route("/planner/weekly-bilan", get(handlers::bilan::weekly_bilan))
         // tutor
         .route("/tutor/sessions/start", post(handlers::tutor::start_or_resume_tutor_session))
         .route("/tutor/chapters/:chapter_id/latest-completed", get(handlers::tutor::get_latest_completed_session))
