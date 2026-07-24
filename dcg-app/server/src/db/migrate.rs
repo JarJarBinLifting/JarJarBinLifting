@@ -68,7 +68,11 @@ pub fn run(conn: &Connection) -> rusqlite::Result<()> {
         );",
     )?;
 
-    for (version, description, sql) in MIGRATIONS {
+    apply_pending(conn, MIGRATIONS)
+}
+
+fn apply_pending(conn: &Connection, migrations: &[(i64, &str, &str)]) -> rusqlite::Result<()> {
+    for (version, description, sql) in migrations {
         // A database can legitimately have a gap when an earlier app build
         // shipped a newer migration before a local feature branch was merged.
         // Check each migration individually so that those omitted, forward-only
@@ -132,11 +136,17 @@ mod tests {
         )
         .unwrap();
 
-        // Simulate a database created while migrations 9 and 10 were absent
-        // from the application build, then opened by the complete migration
-        // list. Migrations must be tracked individually, not by MAX(version).
-        for (version, description, sql) in MIGRATIONS {
-            if matches!(*version, 9 | 10) {
+        const GAPPED_MIGRATIONS: &[(i64, &str, &str)] = &[
+            (1, "base", "CREATE TABLE migration_base (id INTEGER PRIMARY KEY);"),
+            (2, "missing", "CREATE TABLE migration_recovered (id INTEGER PRIMARY KEY);"),
+            (3, "newer", "CREATE TABLE migration_newer (id INTEGER PRIMARY KEY);"),
+        ];
+
+        // Simulate an earlier build that applied versions 1 and 3 but did not
+        // contain version 2. Pending versions must be found individually, not
+        // inferred from MAX(version).
+        for (version, description, sql) in GAPPED_MIGRATIONS {
+            if *version == 2 {
                 continue;
             }
             conn.execute_batch(sql).unwrap();
@@ -147,24 +157,24 @@ mod tests {
             .unwrap();
         }
 
-        run(&conn).unwrap();
+        apply_pending(&conn, GAPPED_MIGRATIONS).unwrap();
 
         let missing_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM _migrations WHERE version IN (9, 10)",
+                "SELECT COUNT(*) FROM _migrations WHERE version = 2",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(missing_count, 2);
+        assert_eq!(missing_count, 1);
 
-        let lesson_versions_exists: i64 = conn
+        let recovered_table_exists: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'lesson_versions'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'migration_recovered'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(lesson_versions_exists, 1);
+        assert_eq!(recovered_table_exists, 1);
     }
 }
