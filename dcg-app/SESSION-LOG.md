@@ -143,3 +143,14 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 - Un test de regression autonome reproduit une sequence de migrations avec une version intermediaire manquante apres une version plus recente, puis verifie que le schema attendu est bien recupere. Cela protege les bases locales existantes sans supprimer ni reconstruire de donnees.
 - Tests Rust : **57 reussites, 0 echec**. Build du serveur de production et demarrage reel reussis ; `GET /api/tutor/quiz/due` repond `HTTP 200`.
 - Commits : `4e26e0c fix: apply missing migrations safely` et `d98c59f test: make migration gap coverage self-contained`. Aucune dependance ajoutee.
+
+---
+
+# Poursuite autonome - rendre SM-2 actionnable
+
+## Ce qui est fait et teste
+
+- Apres chaque reponse du Quiz eclair, l'etudiant voit maintenant sa prochaine reprise en langage clair : `aujourd'hui`, `demain` ou la date complete. Le message relie explicitement cette echeance a l'espacement SM-2 apres une reussite, ou a la consolidation rapide apres une erreur.
+- La date transmise par l'API est interpretee comme une date de calendrier locale afin d'eviter un decalage de jour lie au fuseau horaire du navigateur.
+- Lint frontend, build frontend, **57 tests Rust**, build serveur et demarrage reel sont reussis. L'endpoint `GET /api/tutor/quiz/due` a repondu `HTTP 200`.
+- Commit : `dbc6af2 feat: show quiz review timing`. Aucune dependance ni migration ajoutee.
