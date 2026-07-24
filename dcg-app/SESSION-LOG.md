@@ -132,3 +132,14 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 1. Afficher la date et l'intervalle de la prochaine reprise dans le resultat du QCM, pour rendre le plan de travail encore plus concret.
 2. Quand assez d'historique individuel sera disponible, comparer les taux de rappel observes aux estimations SM-2 avant d'envisager FSRS.
+
+---
+
+# Correctif de surete - migrations locales
+
+## Ce qui est fait et teste
+
+- Le moteur de migrations ne se fie plus au plus grand numero applique : il verifie maintenant chaque migration individuellement. Une migration plus ancienne absente peut donc etre appliquee lors d'un lancement ulterieur, meme si une migration plus recente a deja ete enregistree.
+- Un test de regression reproduit ce cas avec les migrations 9 et 10 manquantes apres les migrations plus recentes, puis verifie la creation de la bibliotheque de lecons. Cela protege les bases locales existantes sans supprimer ni reconstruire de donnees.
+- Tests Rust : **57 reussites, 0 echec**. Build du serveur de production et demarrage reel reussis ; `GET /api/tutor/quiz/due` repond `HTTP 200`.
+- Commit : `4e26e0c fix: apply missing migrations safely`. Aucune dependance ajoutee.
