@@ -2,6 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { DueQuizItem, QuizAnswerResult } from "../../lib/types";
 
+function reviewDateLabel(isoDate: string): string {
+  // The API sends a calendar date. Midday avoids an accidental UTC offset
+  // changing the displayed day in browsers west of the server timezone.
+  const date = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const localIsoDate = (value: Date) => [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
+  if (isoDate === localIsoDate(today)) return "aujourd'hui";
+  if (isoDate === localIsoDate(tomorrow)) return "demain";
+
+  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(date);
+}
+
 /** Quiz éclair: re-asks previously-missed QCM questions from the bank, one
  * at a time, graded server-side (the correct answer never reaches the client
  * before you commit to a choice). Zero LLM calls — every question was
@@ -168,6 +189,12 @@ export function QuickQuiz({ items, total, onClose }: { items: DueQuizItem[]; tot
                   {!verdict.was_correct && verdict.choice_feedback && verdict.explication && (
                     <><br /><br /><strong>La règle à retenir :</strong> {verdict.explication}</>
                   )}
+                </div>
+                <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "-5px 0 14px", textAlign: "center" }}>
+                  Prochaine reprise : <strong style={{ color: "var(--text)" }}>{reviewDateLabel(verdict.next_review_date)}</strong>
+                  {verdict.was_correct
+                    ? " — l'espacement augmente si ce rappel reste solide."
+                    : " — une reprise courte consolidera la règle."}
                 </div>
                 <button className="primary-button" style={{ width: "100%" }} onClick={next}>
                   {idx + 1 >= items.length ? "Voir le résultat" : "Question suivante (entrée)"}
