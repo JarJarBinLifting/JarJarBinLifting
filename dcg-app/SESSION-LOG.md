@@ -140,6 +140,6 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Ce qui est fait et teste
 
 - Le moteur de migrations ne se fie plus au plus grand numero applique : il verifie maintenant chaque migration individuellement. Une migration plus ancienne absente peut donc etre appliquee lors d'un lancement ulterieur, meme si une migration plus recente a deja ete enregistree.
-- Un test de regression reproduit ce cas avec les migrations 9 et 10 manquantes apres les migrations plus recentes, puis verifie la creation de la bibliotheque de lecons. Cela protege les bases locales existantes sans supprimer ni reconstruire de donnees.
+- Un test de regression autonome reproduit une sequence de migrations avec une version intermediaire manquante apres une version plus recente, puis verifie que le schema attendu est bien recupere. Cela protege les bases locales existantes sans supprimer ni reconstruire de donnees.
 - Tests Rust : **57 reussites, 0 echec**. Build du serveur de production et demarrage reel reussis ; `GET /api/tutor/quiz/due` repond `HTTP 200`.
-- Commit : `4e26e0c fix: apply missing migrations safely`. Aucune dependance ajoutee.
+- Commits : `4e26e0c fix: apply missing migrations safely` et `d98c59f test: make migration gap coverage self-contained`. Aucune dependance ajoutee.
