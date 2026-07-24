@@ -68,16 +68,17 @@ pub fn run(conn: &Connection) -> rusqlite::Result<()> {
         );",
     )?;
 
-    let applied: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM _migrations",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-
     for (version, description, sql) in MIGRATIONS {
-        if *version <= applied {
+        // A database can legitimately have a gap when an earlier app build
+        // shipped a newer migration before a local feature branch was merged.
+        // Check each migration individually so that those omitted, forward-only
+        // schema changes are applied safely on the next launch.
+        let already_applied: i64 = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = ?1)",
+            [version],
+            |r| r.get(0),
+        )?;
+        if already_applied != 0 {
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -117,5 +118,53 @@ mod tests {
             )
             .unwrap();
         assert_eq!(table_exists, 1);
+    }
+
+    #[test]
+    fn fills_an_older_missing_migration_after_newer_ones() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE _migrations (
+                version INTEGER PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        // Simulate a database created while migrations 9 and 10 were absent
+        // from the application build, then opened by the complete migration
+        // list. Migrations must be tracked individually, not by MAX(version).
+        for (version, description, sql) in MIGRATIONS {
+            if matches!(*version, 9 | 10) {
+                continue;
+            }
+            conn.execute_batch(sql).unwrap();
+            conn.execute(
+                "INSERT INTO _migrations (version, description) VALUES (?1, ?2)",
+                (version, description),
+            )
+            .unwrap();
+        }
+
+        run(&conn).unwrap();
+
+        let missing_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE version IN (9, 10)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(missing_count, 2);
+
+        let lesson_versions_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'lesson_versions'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lesson_versions_exists, 1);
     }
 }
