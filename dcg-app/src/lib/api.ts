@@ -2,6 +2,7 @@ import type {
   ApiKeyStatus,
   Chapter,
   CompleteTutorSessionResult,
+  ConceptProgress,
   AnnaleAttempt,
   BackupInfo,
   DueChapter,
@@ -236,6 +237,7 @@ export const saveFlashcards = (
 export const updateFlashcardProgress = (id: number, quality: number | boolean) =>
   post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, typeof quality === "boolean" ? { correct: quality } : { quality });
 export const listDueFlashcards = () => get<DueFlashcardsResponse>("/tutor/flashcards/due");
+export const listConceptProgress = () => get<ConceptProgress[]>("/tutor/concepts/progress");
 
 // ─── quiz éclair ───
 export const listDueQuiz = () => get<DueQuizResponse>("/tutor/quiz/due");

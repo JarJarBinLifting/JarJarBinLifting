@@ -112,6 +112,24 @@ pub struct DueFlashcardsResponse {
     pub cards: Vec<DueFlashcard>,
 }
 
+/// Progress is grouped by the notion identifier carried by each flashcard,
+/// never collapsed into a chapter-wide average. `sample_question` keeps older
+/// cards (which may have only a numeric concept id) understandable in the UI.
+#[derive(Debug, Serialize, Clone)]
+pub struct ConceptProgress {
+    pub chapter_id: i64,
+    pub chapter_name: String,
+    pub ue_code: String,
+    pub ue_color: Option<String>,
+    pub concept_id: Option<String>,
+    pub sample_question: String,
+    pub total_cards: i64,
+    pub mastered_cards: i64,
+    pub due_cards: i64,
+    pub avg_sm2_repetitions: f64,
+    pub next_review_date: Option<String>,
+}
+
 /// One question in the daily "quiz éclair": a previously-missed QCM question
 /// re-asked with its original options. The correct index deliberately stays
 /// server-side — answers are checked by the answer endpoint, one source of

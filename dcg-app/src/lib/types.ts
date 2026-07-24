@@ -154,6 +154,20 @@ export interface DueFlashcardsResponse {
   cards: DueFlashcard[];
 }
 
+export interface ConceptProgress {
+  chapter_id: number;
+  chapter_name: string;
+  ue_code: string;
+  ue_color: string | null;
+  concept_id: string | null;
+  sample_question: string;
+  total_cards: number;
+  mastered_cards: number;
+  due_cards: number;
+  avg_sm2_repetitions: number;
+  next_review_date: string | null;
+}
+
 /** One question in the daily "quiz éclair" — a previously missed QCM
  * question re-asked with its original options. The correct index stays
  * server-side; answers are graded by the answer endpoint. */

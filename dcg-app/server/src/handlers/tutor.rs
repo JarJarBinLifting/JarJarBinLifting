@@ -3,7 +3,7 @@ use crate::db::with_conn;
 use crate::handlers::planner::{row_to_qcm, set_chapter_status};
 use crate::handlers::scheduler::{self, SessionResult};
 use crate::models::{
-    CompleteTutorSessionResult, DueChapter, DueFlashcard, DueFlashcardsResponse, DueQuizItem, DueQuizResponse, FlashcardRow, ModelUsageRow, QuizAnswerResult, TutorSessionRow,
+    CompleteTutorSessionResult, ConceptProgress, DueChapter, DueFlashcard, DueFlashcardsResponse, DueQuizItem, DueQuizResponse, FlashcardRow, ModelUsageRow, QuizAnswerResult, TutorSessionRow,
     WeakChapter,
 };
 use axum::extract::{Path, Query, State};
@@ -386,6 +386,60 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(DueFlashcardsResponse { total, cards: interleave_due_cards(cards, DAILY_DECK_LIMIT as usize) })
+}
+
+/// Returns a notion-level view of memory strength. A single chapter can be
+/// secure on one concept and fragile on another, so this deliberately groups
+/// cards by their `concept_id` rather than averaging the whole lesson.
+pub async fn list_concept_progress(State(state): State<AppState>) -> Result<Json<Vec<ConceptProgress>>, AppError> {
+    with_conn(&state.db, |conn| list_concept_progress_inner(conn))
+        .map(Json)
+        .map_err(AppError)
+}
+
+fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<ConceptProgress>> {
+    let mut stmt = conn.prepare(
+        "SELECT f.chapter_id, c.name, u.code, u.color,
+                NULLIF(f.concept_id, ''), MIN(f.question),
+                COUNT(*),
+                SUM(CASE WHEN f.mastered = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN f.next_review_date IS NOT NULL AND f.next_review_date <= date('now','localtime') THEN 1 ELSE 0 END),
+                COALESCE(AVG(f.sm2_repetitions), 0),
+                MIN(f.next_review_date)
+         FROM flashcards f
+         JOIN chapters c ON c.id = f.chapter_id
+         JOIN ues u ON u.id = c.ue_id
+         GROUP BY f.chapter_id, NULLIF(f.concept_id, '')",
+    )?;
+    let mut concepts = stmt
+        .query_map([], |row| {
+            Ok(ConceptProgress {
+                chapter_id: row.get(0)?,
+                chapter_name: row.get(1)?,
+                ue_code: row.get(2)?,
+                ue_color: row.get(3)?,
+                concept_id: row.get(4)?,
+                sample_question: row.get(5)?,
+                total_cards: row.get(6)?,
+                mastered_cards: row.get(7)?,
+                due_cards: row.get(8)?,
+                avg_sm2_repetitions: row.get(9)?,
+                next_review_date: row.get(10)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    // Urgent concepts lead, then the weakest mastery ratio. Cross-multiplying
+    // avoids float ordering edge cases and keeps the ordering deterministic.
+    concepts.sort_by(|left, right| {
+        right
+            .due_cards
+            .cmp(&left.due_cards)
+            .then_with(|| (left.mastered_cards * right.total_cards).cmp(&(right.mastered_cards * left.total_cards)))
+            .then_with(|| left.chapter_name.cmp(&right.chapter_name))
+            .then_with(|| left.concept_id.cmp(&right.concept_id))
+    });
+    Ok(concepts)
 }
 
 /// Preserves the server's priority order while avoiding two cards from the
@@ -1127,6 +1181,24 @@ mod tests {
         assert_ne!(deck[0].chapter_id, deck[1].chapter_id);
         assert_ne!(deck[0].concept_id, deck[1].concept_id);
         assert_ne!(deck[1].chapter_id, deck[2].chapter_id);
+    }
+
+    #[test]
+    fn concept_progress_is_grouped_by_notion_not_just_by_chapter() {
+        let conn = setup();
+        let first = insert_card(&conn, "Notion A — carte 1", 0, &local_date_plus(0));
+        let second = insert_card(&conn, "Notion A — carte 2", 0, &local_date_plus(1));
+        let third = insert_card(&conn, "Notion B — carte 1", 2, &local_date_plus(0));
+        conn.execute("UPDATE flashcards SET concept_id = 'A', mastered = 0 WHERE id IN (?1, ?2)", params![first, second]).unwrap();
+        conn.execute("UPDATE flashcards SET concept_id = 'B', mastered = 1, sm2_repetitions = 3 WHERE id = ?1", params![third]).unwrap();
+
+        let concepts = list_concept_progress_inner(&conn).unwrap();
+        assert_eq!(concepts.len(), 2);
+        let a = concepts.iter().find(|concept| concept.concept_id.as_deref() == Some("A")).unwrap();
+        let b = concepts.iter().find(|concept| concept.concept_id.as_deref() == Some("B")).unwrap();
+        assert_eq!((a.total_cards, a.mastered_cards, a.due_cards), (2, 0, 1));
+        assert_eq!((b.total_cards, b.mastered_cards, b.due_cards), (1, 1, 1));
+        assert!(b.avg_sm2_repetitions > a.avg_sm2_repetitions);
     }
 
     #[test]

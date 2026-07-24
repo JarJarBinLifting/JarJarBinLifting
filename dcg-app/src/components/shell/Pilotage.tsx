@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
 import { useAppState } from "../../state/AppState";
-import type { AnnaleAttempt, ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
+import type { AnnaleAttempt, ConceptProgress, ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
 import { AnnaleModal } from "./AnnaleModal";
 
 const SKILLS: { id: ExamSkill; label: string; description: string }[] = [
@@ -51,11 +51,22 @@ export function Pilotage() {
   const [annales, setAnnales] = useState<AnnaleAttempt[]>([]);
   const [annaleOpen, setAnnaleOpen] = useState<{ resume: AnnaleAttempt | null } | null>(null);
   const [scenarioDrafts, setScenarioDrafts] = useState<Record<number, { current: string; target: string }>>({});
+  const [concepts, setConcepts] = useState<ConceptProgress[]>([]);
 
   useEffect(() => {
     api.listAnnales().then(setAnnales);
   }, []);
 
+
+  useEffect(() => {
+    let current = true;
+    api.listConceptProgress().then((rows) => {
+      if (current) setConcepts(rows);
+    }).catch(() => {
+      // This view remains useful even before the learner has any cards.
+    });
+    return () => { current = false; };
+  }, []);
   const activeErrors = errorNotes.filter((e) => e.status === "active");
   const dueErrors = activeErrors.filter((e) => e.next_review_date <= todayIso());
   const selectedUe = ues.find((u) => u.id === selectedUeId) ?? ues[0] ?? null;
@@ -136,6 +147,24 @@ export function Pilotage() {
         </p></div>
       </div>
 
+      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Notions a securiser</div>
+        <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "4px 0 14px" }}>Chaque ligne est une notion, pas une moyenne de chapitre. Priorite aux notions dues et peu stabilisees.</p>
+        {concepts.length ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {concepts.slice(0, 8).map((concept) => {
+              const percentage = Math.round((concept.mastered_cards / concept.total_cards) * 100);
+              const name = concept.concept_id ? `Notion ${concept.concept_id}` : "Notion complementaire";
+              return <div key={`${concept.chapter_id}:${concept.concept_id ?? "general"}`} style={{ background: "var(--card2)", border: "1px solid var(--border)", borderLeft: `3px solid ${concept.ue_color ?? "var(--accent-blue)"}`, borderRadius: 2, padding: "10px 11px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 4 }}><div style={{ minWidth: 0 }}><span style={{ color: concept.ue_color ?? "var(--muted)", fontSize: 10, fontWeight: 800 }}>{concept.ue_code}</span><strong style={{ display: "block", fontSize: 12, color: "var(--text)", marginTop: 2 }}>{name} - {concept.chapter_name}</strong></div><b style={{ color: percentage >= 70 ? "var(--accent-green)" : percentage >= 40 ? "var(--accent-yellow)" : "var(--accent-red)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{percentage}%</b></div>
+                <div style={{ height: 4, background: "var(--track)", borderRadius: 4, overflow: "hidden", margin: "7px 0" }}><div style={{ width: `${percentage}%`, height: "100%", background: concept.ue_color ?? "var(--accent-blue)" }} /></div>
+                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.45 }}>{concept.mastered_cards}/{concept.total_cards} cartes stabilisees - {concept.avg_sm2_repetitions.toFixed(1)} rappels SM-2 - {concept.due_cards ? `${concept.due_cards} a revoir aujourd'hui` : `prochain rappel ${concept.next_review_date ?? "a planifier"}`}</div>
+                <div style={{ fontSize: 11, color: "var(--text)", marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{concept.sample_question}</div>
+              </div>;
+            })}
+          </div>
+        ) : <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>Les notions apparaitront ici des que tu auras etudie une lecon avec des flashcards.</div>}
+      </section>
       <section className="pilotage-panel pilotage-priority surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-red)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: dueErrors.length ? 12 : 0 }}>
           <div>

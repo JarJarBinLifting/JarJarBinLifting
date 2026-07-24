@@ -79,6 +79,7 @@ fn api_router() -> Router<AppState> {
         .route("/tutor/sessions/:id/abandon", post(handlers::tutor::abandon_tutor_session))
         .route("/tutor/chapters/:chapter_id/flashcards", get(handlers::tutor::list_flashcards).post(handlers::tutor::save_flashcards))
         .route("/tutor/flashcards/due", get(handlers::tutor::list_due_flashcards))
+        .route("/tutor/concepts/progress", get(handlers::tutor::list_concept_progress))
         .route("/tutor/quiz/due", get(handlers::tutor::list_due_quiz))
         .route("/tutor/quiz/:id/answer", post(handlers::tutor::answer_quiz_item))
         // annale training
