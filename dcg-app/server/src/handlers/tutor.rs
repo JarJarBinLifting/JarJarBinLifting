@@ -215,10 +215,13 @@ fn row_to_flashcard(row: &rusqlite::Row) -> rusqlite::Result<FlashcardRow> {
         correct_streak: row.get(6)?,
         mastered: row.get::<_, i64>(7)? != 0,
         last_reviewed_at: row.get(8)?,
+        sm2_repetitions: row.get(9)?,
+        sm2_interval_days: row.get(10)?,
+        sm2_ease_factor: row.get(11)?,
     })
 }
 
-const FLASHCARD_COLUMNS: &str = "id, chapter_id, concept_id, question, answer, box_level, correct_streak, mastered, last_reviewed_at";
+const FLASHCARD_COLUMNS: &str = "id, chapter_id, concept_id, question, answer, box_level, correct_streak, mastered, last_reviewed_at, sm2_repetitions, sm2_interval_days, sm2_ease_factor";
 
 pub async fn list_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
     with_conn(&state.db, |conn| {
@@ -269,7 +272,10 @@ pub async fn save_flashcards(State(state): State<AppState>, Path(chapter_id): Pa
 
 #[derive(Debug, Deserialize)]
 pub struct FlashcardProgressRequest {
-    pub correct: bool,
+    /// SM-2 quality after active recall: 0 (forgotten) through 5 (effortless).
+    /// `correct` is retained temporarily for older app builds.
+    pub quality: Option<i64>,
+    pub correct: Option<bool>,
 }
 
 /// Mirrors the flashcard-level Leitner queue: a correct pass advances the box
@@ -278,7 +284,12 @@ pub struct FlashcardProgressRequest {
 /// phase inside a tutor session and the standalone révision éclair deck — so
 /// they share a single per-card schedule instead of drifting apart.
 pub async fn update_flashcard_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<FlashcardProgressRequest>) -> Result<Json<FlashcardRow>, AppError> {
-    with_conn(&state.db, |conn| grade_flashcard(conn, id, body.correct))
+    let quality = match body.quality.or_else(|| body.correct.map(|correct| if correct { 4 } else { 1 })) {
+        Some(quality) if (0..=5).contains(&quality) => quality,
+        Some(_) => return Err(AppError("La qualité de rappel doit être comprise entre 0 et 5.".to_string())),
+        None => return Err(AppError("Indique la qualité du rappel avant de passer à la carte suivante.".to_string())),
+    };
+    with_conn(&state.db, |conn| grade_flashcard(conn, id, quality))
         .map(Json)
         .map_err(AppError)
 }
@@ -289,36 +300,37 @@ fn read_exam_date(conn: &Connection) -> Option<chrono::NaiveDate> {
         .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
 }
 
-fn grade_flashcard(conn: &Connection, id: i64, correct: bool) -> rusqlite::Result<FlashcardRow> {
-    let current_box: i64 = conn.query_row("SELECT box_level FROM flashcards WHERE id = ?1", params![id], |r| r.get(0))?;
+fn grade_flashcard(conn: &Connection, id: i64, quality: i64) -> rusqlite::Result<FlashcardRow> {
+    let (current_box, repetitions, interval_days, ease_factor): (i64, i64, i64, f64) = conn.query_row(
+        "SELECT box_level, sm2_repetitions, sm2_interval_days, sm2_ease_factor FROM flashcards WHERE id = ?1",
+        params![id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )?;
     let today = chrono::Local::now().date_naive();
-    let (box_level, next_review_date) = scheduler::next_card_schedule(current_box, correct, today, read_exam_date(conn));
-
-    if correct {
-        conn.execute(
-            "UPDATE flashcards SET
-                correct_streak = correct_streak + 1,
-                box_level = ?1,
-                mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE 0 END,
-                next_review_date = ?2,
-                last_reviewed_at = datetime('now'),
-                updated_at = datetime('now')
-             WHERE id = ?3",
-            params![box_level, next_review_date.to_string(), id],
-        )?;
-    } else {
-        conn.execute(
-            "UPDATE flashcards SET
-                correct_streak = 0,
-                box_level = ?1,
-                mastered = 0,
-                next_review_date = ?2,
-                last_reviewed_at = datetime('now'),
-                updated_at = datetime('now')
-             WHERE id = ?3",
-            params![box_level, next_review_date.to_string(), id],
-        )?;
-    }
+    let update = scheduler::next_sm2_card_schedule(
+        scheduler::Sm2CardState { repetitions, interval_days, ease_factor },
+        quality,
+        today,
+        read_exam_date(conn),
+    );
+    let recalled = quality >= 3;
+    // Keep legacy display fields in sync, while the new SM-2 fields are the
+    // single source of truth for the next review date.
+    let box_level = if recalled { current_box + 1 } else { 0 }.clamp(0, 5);
+    conn.execute(
+        "UPDATE flashcards SET
+            correct_streak = CASE WHEN ?1 THEN correct_streak + 1 ELSE 0 END,
+            box_level = ?2,
+            mastered = CASE WHEN ?3 >= 2 THEN 1 ELSE 0 END,
+            sm2_repetitions = ?3,
+            sm2_interval_days = ?4,
+            sm2_ease_factor = ?5,
+            next_review_date = ?6,
+            last_reviewed_at = datetime('now'),
+            updated_at = datetime('now')
+         WHERE id = ?7",
+        params![recalled as i64, box_level, update.repetitions, update.interval_days, update.ease_factor, update.next_review_date.to_string(), id],
+    )?;
     conn.query_row(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"), params![id], row_to_flashcard)
 }
 
@@ -344,12 +356,12 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
         |r| r.get(0),
     )?;
     let mut stmt = conn.prepare(
-        "SELECT f.id, f.chapter_id, c.name, u.code, u.color, f.question, f.answer, f.box_level
+        "SELECT f.id, f.chapter_id, c.name, u.code, u.color, f.concept_id, f.question, f.answer, f.box_level, f.sm2_repetitions, f.sm2_interval_days, f.sm2_ease_factor
          FROM flashcards f
          JOIN chapters c ON c.id = f.chapter_id
          JOIN ues u ON u.id = c.ue_id
          WHERE f.next_review_date IS NOT NULL AND f.next_review_date <= date('now','localtime')
-         ORDER BY f.box_level ASC, f.next_review_date ASC, f.id ASC
+         ORDER BY f.sm2_repetitions ASC, f.box_level ASC, f.sm2_ease_factor ASC, f.next_review_date ASC, f.id ASC
          LIMIT ?1",
     )?;
     let cards = stmt
@@ -360,9 +372,13 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
                 chapter_name: row.get(2)?,
                 ue_code: row.get(3)?,
                 ue_color: row.get(4)?,
-                question: row.get(5)?,
-                answer: row.get(6)?,
-                box_level: row.get(7)?,
+                concept_id: row.get(5)?,
+                question: row.get(6)?,
+                answer: row.get(7)?,
+                box_level: row.get(8)?,
+                sm2_repetitions: row.get(9)?,
+                sm2_interval_days: row.get(10)?,
+                sm2_ease_factor: row.get(11)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1013,14 +1029,17 @@ mod tests {
     }
 
     #[test]
-    fn grading_a_card_correct_climbs_a_box_and_schedules_the_next_review() {
+    fn grading_a_card_with_good_recall_starts_sm2_at_one_day() {
         let conn = setup();
         let id = insert_card(&conn, "Q", 1, &local_date_plus(0));
 
-        let card = grade_flashcard(&conn, id, true).unwrap();
+        let card = grade_flashcard(&conn, id, 4).unwrap();
         assert_eq!(card.box_level, 2);
+        assert_eq!(card.sm2_repetitions, 1);
+        assert_eq!(card.sm2_interval_days, 1);
+        assert_eq!(card.sm2_ease_factor, 2.5);
         let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
-        assert_eq!(due, local_date_plus(4)); // box 2 → +4 days
+        assert_eq!(due, local_date_plus(1));
     }
 
     #[test]
@@ -1029,10 +1048,12 @@ mod tests {
         let id = insert_card(&conn, "Q", 4, &local_date_plus(0));
         conn.execute("UPDATE flashcards SET correct_streak = 3, mastered = 1 WHERE id = ?1", params![id]).unwrap();
 
-        let card = grade_flashcard(&conn, id, false).unwrap();
+        let card = grade_flashcard(&conn, id, 1).unwrap();
         assert_eq!(card.box_level, 0);
         assert_eq!(card.correct_streak, 0);
         assert!(!card.mastered);
+        assert_eq!(card.sm2_repetitions, 0);
+        assert_eq!(card.sm2_interval_days, 1);
         let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
         assert_eq!(due, local_date_plus(1));
     }

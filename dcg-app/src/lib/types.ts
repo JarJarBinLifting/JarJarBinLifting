@@ -126,6 +126,9 @@ export interface FlashcardRow {
   correct_streak: number;
   mastered: boolean;
   last_reviewed_at: string | null;
+  sm2_repetitions: number;
+  sm2_interval_days: number;
+  sm2_ease_factor: number;
 }
 
 /** One card in the daily "révision éclair" deck, with chapter/UE context. */
@@ -135,9 +138,13 @@ export interface DueFlashcard {
   chapter_name: string;
   ue_code: string;
   ue_color: string | null;
+  concept_id: string | null;
   question: string;
   answer: string;
   box_level: number;
+  sm2_repetitions: number;
+  sm2_interval_days: number;
+  sm2_ease_factor: number;
 }
 
 /** `total` counts everything due today; `cards` is capped at the daily deck

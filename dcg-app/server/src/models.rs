@@ -80,6 +80,9 @@ pub struct FlashcardRow {
     pub correct_streak: i64,
     pub mastered: bool,
     pub last_reviewed_at: Option<String>,
+    pub sm2_repetitions: i64,
+    pub sm2_interval_days: i64,
+    pub sm2_ease_factor: f64,
 }
 
 /// One card in the daily "révision éclair" deck, carrying just enough
@@ -91,9 +94,13 @@ pub struct DueFlashcard {
     pub chapter_name: String,
     pub ue_code: String,
     pub ue_color: Option<String>,
+    pub concept_id: Option<String>,
     pub question: String,
     pub answer: String,
     pub box_level: i64,
+    pub sm2_repetitions: i64,
+    pub sm2_interval_days: i64,
+    pub sm2_ease_factor: f64,
 }
 
 /// `total` is the full count of cards due today; `cards` is capped at the

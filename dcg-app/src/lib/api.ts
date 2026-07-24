@@ -231,8 +231,10 @@ export const saveFlashcards = (
   tutorSessionId: number,
   cards: { concept_id: string | null; question: string; answer: string }[],
 ) => post<FlashcardRow[]>(`/tutor/chapters/${chapterId}/flashcards`, { tutor_session_id: tutorSessionId, cards });
-export const updateFlashcardProgress = (id: number, correct: boolean) =>
-  post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, { correct });
+/** Scores an active-recall attempt with SM-2 quality 0..5. The boolean form
+ * remains supported while the in-session flow is upgraded. */
+export const updateFlashcardProgress = (id: number, quality: number | boolean) =>
+  post<FlashcardRow>(`/tutor/flashcards/${id}/progress`, typeof quality === "boolean" ? { correct: quality } : { quality });
 export const listDueFlashcards = () => get<DueFlashcardsResponse>("/tutor/flashcards/due");
 
 // ─── quiz éclair ───

@@ -139,6 +139,82 @@ pub fn next_card_schedule(current_box: i64, correct: bool, today: NaiveDate, exa
     (box_level, next_review_date)
 }
 
+/// SM-2's complete per-card state. It is intentionally small enough to live
+/// alongside the legacy Leitner fields during migration: the algorithm needs
+/// only successful repetitions, the previous interval, and an ease factor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sm2CardState {
+    pub repetitions: i64,
+    pub interval_days: i64,
+    pub ease_factor: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sm2ScheduleUpdate {
+    pub repetitions: i64,
+    pub interval_days: i64,
+    pub ease_factor: f64,
+    pub next_review_date: NaiveDate,
+}
+
+/// Lowest ease permitted by the original SM-2 algorithm. The floor prevents
+/// repeatedly-missed cards from collapsing into a zero-day loop while keeping
+/// difficult notions visibly closer together than easy ones.
+pub const SM2_MIN_EASE_FACTOR: f64 = 1.3;
+
+/// Calculates the next review using the transparent SM-2 algorithm.
+///
+/// Quality is the learner's post-recall assessment on the 0..=5 SM-2 scale:
+/// 0–2 means the answer was not recalled well enough and restarts the
+/// repetition count; 3–5 succeeds, with a higher quality increasing ease.
+/// Near the DCG exam, the normal interval is halved inside the existing
+/// cram window and never scheduled beyond the exam date.
+pub fn next_sm2_card_schedule(state: Sm2CardState, quality: i64, today: NaiveDate, exam_date: Option<NaiveDate>) -> Sm2ScheduleUpdate {
+    let quality = quality.clamp(0, 5);
+    let ease = if state.ease_factor.is_finite() {
+        state.ease_factor.max(SM2_MIN_EASE_FACTOR)
+    } else {
+        2.5
+    };
+    let q = quality as f64;
+    let ease_factor = (ease + 0.1 - (5.0 - q) * (0.08 + (5.0 - q) * 0.02)).max(SM2_MIN_EASE_FACTOR);
+
+    let (repetitions, interval_days) = if quality < 3 {
+        // A forgotten card is deliberately retried tomorrow. We retain the
+        // updated ease factor, so a persistently difficult notion remains
+        // denser even after it starts being recalled again.
+        (0, 1)
+    } else {
+        let repetitions = state.repetitions.max(0) + 1;
+        let interval_days = match repetitions {
+            1 => 1,
+            2 => 6,
+            _ => ((state.interval_days.max(1) as f64) * ease_factor).round().max(1.0) as i64,
+        };
+        (repetitions, interval_days)
+    };
+
+    let future_exam = exam_date.filter(|&exam| exam > today);
+    let days_to_exam = future_exam.map(|exam| (exam - today).num_days());
+    let effective_interval = match days_to_exam {
+        Some(days) if days <= CRAM_WINDOW_DAYS => (interval_days / 2).max(1),
+        _ => interval_days,
+    };
+    let mut next_review_date = today + chrono::Duration::days(effective_interval);
+    if let Some(exam) = future_exam {
+        if next_review_date > exam {
+            next_review_date = exam;
+        }
+    }
+
+    Sm2ScheduleUpdate {
+        repetitions,
+        interval_days,
+        ease_factor,
+        next_review_date,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +412,67 @@ mod tests {
         // Box 1 → 2 is 4d, halved to 2 — fits before the exam untouched.
         let (_, next) = next_card_schedule(1, true, date(2026, 1, 1), Some(date(2026, 1, 11)));
         assert_eq!(next, date(2026, 1, 3));
+    }
+
+    // ── SM-2 card schedule ──
+
+    #[test]
+    fn sm2_uses_the_standard_one_then_six_day_opening_intervals() {
+        let first = next_sm2_card_schedule(
+            Sm2CardState { repetitions: 0, interval_days: 0, ease_factor: 2.5 },
+            4,
+            date(2026, 1, 1),
+            None,
+        );
+        assert_eq!(first.repetitions, 1);
+        assert_eq!(first.interval_days, 1);
+        assert_eq!(first.next_review_date, date(2026, 1, 2));
+        assert_eq!(first.ease_factor, 2.5);
+
+        let second = next_sm2_card_schedule(
+            Sm2CardState { repetitions: first.repetitions, interval_days: first.interval_days, ease_factor: first.ease_factor },
+            4,
+            date(2026, 1, 2),
+            None,
+        );
+        assert_eq!(second.repetitions, 2);
+        assert_eq!(second.interval_days, 6);
+        assert_eq!(second.next_review_date, date(2026, 1, 8));
+    }
+
+    #[test]
+    fn sm2_quality_changes_ease_and_a_lapse_restarts_repetitions() {
+        let strong = next_sm2_card_schedule(
+            Sm2CardState { repetitions: 2, interval_days: 6, ease_factor: 2.5 },
+            5,
+            date(2026, 1, 1),
+            None,
+        );
+        assert_eq!(strong.repetitions, 3);
+        assert_eq!(strong.interval_days, 16); // 6 × 2.6, rounded
+        assert_eq!(strong.ease_factor, 2.6);
+
+        let lapse = next_sm2_card_schedule(
+            Sm2CardState { repetitions: strong.repetitions, interval_days: strong.interval_days, ease_factor: strong.ease_factor },
+            2,
+            date(2026, 1, 17),
+            None,
+        );
+        assert_eq!(lapse.repetitions, 0);
+        assert_eq!(lapse.interval_days, 1);
+        assert!(lapse.ease_factor < strong.ease_factor);
+        assert_eq!(lapse.next_review_date, date(2026, 1, 18));
+    }
+
+    #[test]
+    fn sm2_respects_the_exam_cram_window_and_never_schedules_past_exam_day() {
+        let update = next_sm2_card_schedule(
+            Sm2CardState { repetitions: 3, interval_days: 30, ease_factor: 2.5 },
+            4,
+            date(2026, 1, 1),
+            Some(date(2026, 1, 11)),
+        );
+        assert_eq!(update.interval_days, 75);
+        assert_eq!(update.next_review_date, date(2026, 1, 11));
     }
 }
