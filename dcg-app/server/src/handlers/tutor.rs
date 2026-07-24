@@ -514,6 +514,8 @@ struct StoredQcmMiss {
     options: Vec<serde_json::Value>,
     #[serde(default)]
     correct: Option<i64>,
+    #[serde(default)]
+    option_feedbacks: Vec<String>,
 }
 
 /// A QCM miss is useful only if it comes back as a concrete future action.
@@ -574,10 +576,23 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
         // schedule instead of duplicating it.
         let correct_ok = miss.correct.is_some_and(|c| c >= 0 && (c as usize) < miss.options.len());
         if miss.options.len() >= 2 && correct_ok {
+            let option_feedbacks_json = if miss.option_feedbacks.len() == miss.options.len()
+                && miss.option_feedbacks.iter().all(|feedback| !feedback.trim().is_empty())
+            {
+                serde_json::to_string(&miss.option_feedbacks).ok()
+            } else {
+                None
+            };
             conn.execute(
-                "INSERT INTO quiz_items (chapter_id, tutor_session_id, question, theme, options_json, correct, explication, next_review_date)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, date('now','localtime'))
+                "INSERT INTO quiz_items (chapter_id, tutor_session_id, question, theme, options_json, correct, explication, option_feedbacks_json, next_review_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, date('now','localtime'))
                  ON CONFLICT(chapter_id, question) DO UPDATE SET
+                    tutor_session_id = excluded.tutor_session_id,
+                    theme = excluded.theme,
+                    options_json = excluded.options_json,
+                    correct = excluded.correct,
+                    explication = excluded.explication,
+                    option_feedbacks_json = excluded.option_feedbacks_json,
                     box_level = 0,
                     correct_streak = 0,
                     next_review_date = date('now','localtime'),
@@ -590,6 +605,7 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
                     serde_json::to_string(&miss.options).unwrap_or_else(|_| "[]".into()),
                     miss.correct.unwrap_or(0),
                     if explication.is_empty() { None } else { Some(explication) },
+                    option_feedbacks_json,
                 ],
             )?;
         }
@@ -616,6 +632,11 @@ fn parse_options(raw: &str) -> Vec<String> {
             other => other.to_string(),
         })
         .collect()
+}
+
+fn parse_option_feedbacks(raw: Option<&str>) -> Vec<String> {
+    raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
+        .unwrap_or_default()
 }
 
 fn list_due_quiz_inner(conn: &Connection) -> rusqlite::Result<DueQuizResponse> {
@@ -665,12 +686,15 @@ pub async fn answer_quiz_item(State(state): State<AppState>, Path(id): Path<i64>
 }
 
 fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::Result<QuizAnswerResult> {
-    let (correct, explication, current_box): (i64, Option<String>, i64) = conn.query_row(
-        "SELECT correct, explication, box_level FROM quiz_items WHERE id = ?1",
+    let (correct, explication, option_feedbacks_json, current_box): (i64, Option<String>, Option<String>, i64) = conn.query_row(
+        "SELECT correct, explication, option_feedbacks_json, box_level FROM quiz_items WHERE id = ?1",
         params![id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
     let was_correct = choice == correct;
+    let choice_feedback = parse_option_feedbacks(option_feedbacks_json.as_deref())
+        .get(choice.max(0) as usize)
+        .map(String::to_owned);
     let today = chrono::Local::now().date_naive();
     let (box_level, next_review_date) = scheduler::next_card_schedule(current_box, was_correct, today, read_exam_date(conn));
 
@@ -689,6 +713,7 @@ fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::
         was_correct,
         correct,
         explication,
+        choice_feedback,
         box_level,
         next_review_date: next_review_date.to_string(),
     })
@@ -1280,6 +1305,19 @@ mod tests {
             .query_row("SELECT COUNT(*), MAX(box_level) FROM quiz_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap();
         assert_eq!((count, box_level), (1, 0));
+    }
+
+    #[test]
+    fn quiz_replay_explains_why_the_selected_distractor_is_tempting() {
+        let conn = setup();
+        let raw = r#"[{"question":"Quel regime ?","theme":"TVA","explication":"Le reel normal est requis.","options":["A) micro","B) simplifie","C) reel normal"],"correct":2,"option_feedbacks":["Le micro semble simple, mais le seuil est depasse.","Le simplifie est proche, mais ses conditions ne sont pas reunies.","C'est la bonne qualification."]}]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+        let id: i64 = conn.query_row("SELECT id FROM quiz_items", [], |row| row.get(0)).unwrap();
+
+        let result = answer_quiz_item_inner(&conn, id, 1).unwrap();
+        assert!(!result.was_correct);
+        assert_eq!(result.choice_feedback.as_deref(), Some("Le simplifie est proche, mais ses conditions ne sont pas reunies."));
+        assert_eq!(result.explication.as_deref(), Some("Le reel normal est requis."));
     }
 
     #[test]

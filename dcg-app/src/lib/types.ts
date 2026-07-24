@@ -192,6 +192,7 @@ export interface QuizAnswerResult {
   was_correct: boolean;
   correct: number;
   explication: string | null;
+  choice_feedback: string | null;
   box_level: number;
   next_review_date: string;
 }

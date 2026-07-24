@@ -164,7 +164,10 @@ export function QuickQuiz({ items, total, onClose }: { items: DueQuizItem[]; tot
                   <strong style={{ color: verdict.was_correct ? "var(--accent-green)" : "var(--accent-red)" }}>
                     {verdict.was_correct ? "Exact." : "Raté."}
                   </strong>{" "}
-                  {verdict.explication ?? ""}
+                  {verdict.choice_feedback ?? verdict.explication ?? ""}
+                  {!verdict.was_correct && verdict.choice_feedback && verdict.explication && (
+                    <><br /><br /><strong>La règle à retenir :</strong> {verdict.explication}</>
+                  )}
                 </div>
                 <button className="primary-button" style={{ width: "100%" }} onClick={next}>
                   {idx + 1 >= items.length ? "Voir le résultat" : "Question suivante (entrée)"}

@@ -158,6 +158,7 @@ pub struct QuizAnswerResult {
     pub was_correct: bool,
     pub correct: i64,
     pub explication: Option<String>,
+    pub choice_feedback: Option<String>,
     pub box_level: i64,
     pub next_review_date: String,
 }
