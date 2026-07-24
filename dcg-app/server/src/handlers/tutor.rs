@@ -405,20 +405,25 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
                 SUM(CASE WHEN f.mastered = 1 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN f.next_review_date IS NOT NULL AND f.next_review_date <= date('now','localtime') THEN 1 ELSE 0 END),
                 COALESCE(AVG(f.sm2_repetitions), 0),
-                MIN(f.next_review_date)
+                MIN(f.next_review_date),
+                MAX(ts.story_json)
          FROM flashcards f
          JOIN chapters c ON c.id = f.chapter_id
          JOIN ues u ON u.id = c.ue_id
+         LEFT JOIN tutor_sessions ts ON ts.id = f.tutor_session_id
          GROUP BY f.chapter_id, NULLIF(f.concept_id, '')",
     )?;
     let mut concepts = stmt
         .query_map([], |row| {
+            let concept_id: Option<String> = row.get(4)?;
+            let story_json: Option<String> = row.get(11)?;
             Ok(ConceptProgress {
                 chapter_id: row.get(0)?,
                 chapter_name: row.get(1)?,
                 ue_code: row.get(2)?,
                 ue_color: row.get(3)?,
-                concept_id: row.get(4)?,
+                concept_label: concept_label_from_story(concept_id.as_deref(), story_json.as_deref()),
+                concept_id,
                 sample_question: row.get(5)?,
                 total_cards: row.get(6)?,
                 mastered_cards: row.get(7)?,
@@ -440,6 +445,26 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
             .then_with(|| left.concept_id.cmp(&right.concept_id))
     });
     Ok(concepts)
+}
+
+/// Flashcards historically store their source-story step as a compact string
+/// ("1", "2", ...). Resolve that stable reference only when the originating
+/// story is available, so the learner sees the actual DCG notion without
+/// changing or migrating any existing card data.
+fn concept_label_from_story(concept_id: Option<&str>, story_json: Option<&str>) -> Option<String> {
+    let step = concept_id?.trim().parse::<usize>().ok()?;
+    if step == 0 {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(story_json?)
+        .ok()?
+        .get("etapes")?
+        .get(step - 1)?
+        .get("notion")?
+        .as_str()
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
 }
 
 /// Preserves the server's priority order while avoiding two cards from the
@@ -1199,6 +1224,14 @@ mod tests {
         assert_eq!((a.total_cards, a.mastered_cards, a.due_cards), (2, 0, 1));
         assert_eq!((b.total_cards, b.mastered_cards, b.due_cards), (1, 1, 1));
         assert!(b.avg_sm2_repetitions > a.avg_sm2_repetitions);
+    }
+
+    #[test]
+    fn concept_label_resolves_a_story_step_without_touching_card_data() {
+        let story = r#"{"etapes":[{"notion":"Le fait generateur"},{"notion":"La TVA deductible"}]}"#;
+        assert_eq!(concept_label_from_story(Some("2"), Some(story)).as_deref(), Some("La TVA deductible"));
+        assert_eq!(concept_label_from_story(Some("0"), Some(story)), None);
+        assert_eq!(concept_label_from_story(Some("2"), Some("not json")), None);
     }
 
     #[test]

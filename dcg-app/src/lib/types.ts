@@ -160,6 +160,7 @@ export interface ConceptProgress {
   ue_code: string;
   ue_color: string | null;
   concept_id: string | null;
+  concept_label: string | null;
   sample_question: string;
   total_cards: number;
   mastered_cards: number;

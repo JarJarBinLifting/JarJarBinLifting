@@ -154,7 +154,7 @@ export function Pilotage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {concepts.slice(0, 8).map((concept) => {
               const percentage = Math.round((concept.mastered_cards / concept.total_cards) * 100);
-              const name = concept.concept_id ? `Notion ${concept.concept_id}` : "Notion complementaire";
+              const name = concept.concept_label ?? (concept.concept_id ? `Notion ${concept.concept_id}` : "Notion complementaire");
               return <div key={`${concept.chapter_id}:${concept.concept_id ?? "general"}`} style={{ background: "var(--card2)", border: "1px solid var(--border)", borderLeft: `3px solid ${concept.ue_color ?? "var(--accent-blue)"}`, borderRadius: 2, padding: "10px 11px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 4 }}><div style={{ minWidth: 0 }}><span style={{ color: concept.ue_color ?? "var(--muted)", fontSize: 10, fontWeight: 800 }}>{concept.ue_code}</span><strong style={{ display: "block", fontSize: 12, color: "var(--text)", marginTop: 2 }}>{name} - {concept.chapter_name}</strong></div><b style={{ color: percentage >= 70 ? "var(--accent-green)" : percentage >= 40 ? "var(--accent-yellow)" : "var(--accent-red)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{percentage}%</b></div>
                 <div style={{ height: 4, background: "var(--track)", borderRadius: 4, overflow: "hidden", margin: "7px 0" }}><div style={{ width: `${percentage}%`, height: "100%", background: concept.ue_color ?? "var(--accent-blue)" }} /></div>

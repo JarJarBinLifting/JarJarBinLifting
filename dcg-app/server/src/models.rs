@@ -122,6 +122,7 @@ pub struct ConceptProgress {
     pub ue_code: String,
     pub ue_color: Option<String>,
     pub concept_id: Option<String>,
+    pub concept_label: Option<String>,
     pub sample_question: String,
     pub total_cards: i64,
     pub mastered_cards: i64,
