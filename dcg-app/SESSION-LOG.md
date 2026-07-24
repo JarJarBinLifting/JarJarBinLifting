@@ -110,3 +110,25 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 - Le Quiz éclair n'envoie le feedback détaillé qu'après la réponse : le bon index ne quitte donc toujours pas le serveur avant l'engagement de l'étudiant.
 - Lorsqu'une même question est ratée à nouveau, sa version la plus récente remplace les options, la bonne réponse, l'explication et les feedbacks associés afin qu'ils restent cohérents entre eux.
+
+---
+
+# Poursuite autonome - QCM et repetition espacee
+
+## Ce qui est fait et teste
+
+- **Quiz eclair passe a SM-2 :** chaque QCM conserve maintenant son nombre de repetitions, son intervalle et son facteur de facilite. La bonne reponse est evaluee a la qualite **4/5** (rappel solide mais facilite par les options) ; une erreur vaut **1/5** et revient le lendemain. Les deux premieres reussites ouvrent les intervalles standards SM-2 de 1 puis 6 jours.
+- Les QCM dus sont priorises par repetitions et facilite SM-2 pour faire revenir en premier les notions encore peu consolidees. L'ecran explique explicitement que cet espacement est calcule par SM-2.
+- La migration `0013_quiz_sm2.sql` ajoute les trois colonnes SM-2 et initialise prudemment les cartes existantes depuis leur niveau Leitner ; aucune echeance, reponse ni historique n'est supprime.
+- Tests Rust : **56 reussites, 0 echec**. Lint frontend : reussi avec les six avertissements `react/only-export-components` preexistants. Builds frontend et serveur : reussis.
+- Demarrage reel : le binaire de production a ouvert la base locale et `GET /api/tutor/quiz/due` a repondu `HTTP 200` sur un port isole.
+- Commit : `57cc5b2 feat: schedule quiz reviews with SM-2`. Aucune dependance ajoutee.
+
+## Decisions a valider
+
+- Le barème 4/5 pour une bonne reponse au QCM est volontairement plus prudent qu'un rappel ecrit entierement libre : cela evite d'espacer trop vite une reponse simplement reconnue.
+
+## Ce que j'aurais fait ensuite
+
+1. Afficher la date et l'intervalle de la prochaine reprise dans le resultat du QCM, pour rendre le plan de travail encore plus concret.
+2. Quand assez d'historique individuel sera disponible, comparer les taux de rappel observes aux estimations SM-2 avant d'envisager FSRS.
