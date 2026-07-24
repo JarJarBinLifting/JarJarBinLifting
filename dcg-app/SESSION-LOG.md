@@ -94,3 +94,19 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 - Les trois tâches de la consigne initiale étaient des placeholders vides. Le périmètre a donc été dérivé explicitement des cinq contraintes d'apprentissage formulées par l'utilisateur : SM-2, rappel actif, feedback explicatif, entrelacement et suivi par notion.
 - Le dépôt contenait déjà de nombreux changements non commités. Chaque commit a été construit en ne mettant en index que les hunks de cette session ; les modifications préexistantes restent intactes.
+
+---
+
+# Poursuite autonome — améliorations complémentaires
+
+## Ce qui est fait et testé
+
+- **Notions lisibles dans Pilotage :** le suivi de progression résout maintenant l'identifiant d'étape d'une flashcard vers le vrai intitulé de la notion de l'histoire (par exemple « TVA déductible »). Cela fonctionne aussi pour les cartes déjà importées, sans migration et sans réécriture de données. Commit : `468bbf4 feat: show meaningful concept labels`.
+- **Feedback des distracteurs dans le Quiz éclair :** une question rejouée conserve désormais le feedback associé à chaque option. Après un mauvais choix, l'étudiant reçoit pourquoi ce choix était crédible puis la règle à retenir ; les anciennes questions gardent leur explication générique. La migration `0012_quiz_option_feedback.sql` ajoute uniquement une colonne nullable. Commit : `4ef6393 feat: explain tempting quiz distractors`.
+- Tests Rust : **56 réussites, 0 échec**. Lint et build du frontend : réussis avec les six avertissements préexistants non bloquants. Build du serveur de production : réussi.
+- Démarrage réel : le binaire de production a ouvert la base locale Windows et `GET /api/tutor/quiz/due` a répondu `HTTP 200` sur un port isolé.
+
+## Décisions à valider
+
+- Le Quiz éclair n'envoie le feedback détaillé qu'après la réponse : le bon index ne quitte donc toujours pas le serveur avant l'engagement de l'étudiant.
+- Lorsqu'une même question est ratée à nouveau, sa version la plus récente remplace les options, la bonne réponse, l'explication et les feedbacks associés afin qu'ils restent cohérents entre eux.
