@@ -50,6 +50,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "quiz option feedback",
         include_str!("../../migrations/0012_quiz_option_feedback.sql"),
     ),
+    (
+        13,
+        "quiz SM-2 scheduling",
+        include_str!("../../migrations/0013_quiz_sm2.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;

@@ -81,8 +81,8 @@ export function QuickQuiz({ items, total, onClose }: { items: DueQuizItem[]; tot
             </div>
             <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>
               {right === items.length
-                ? "Toutes reprises — ces questions s'espacent maintenant dans le temps."
-                : "Les questions ratées reviennent dès demain ; les autres s'espacent."}
+                ? "Toutes reprises — SM‑2 espace maintenant ces questions dans le temps."
+                : "Les questions ratées reviennent dès demain ; SM‑2 espace les autres selon tes réussites."}
             </p>
             {remaining > 0 && (
               <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 14 }}>

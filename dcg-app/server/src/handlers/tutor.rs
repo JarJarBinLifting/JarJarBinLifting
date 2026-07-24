@@ -651,7 +651,7 @@ fn list_due_quiz_inner(conn: &Connection) -> rusqlite::Result<DueQuizResponse> {
          JOIN chapters c ON c.id = q.chapter_id
          JOIN ues u ON u.id = c.ue_id
          WHERE q.next_review_date <= date('now','localtime')
-         ORDER BY q.box_level ASC, q.next_review_date ASC, q.id ASC
+         ORDER BY q.sm2_repetitions ASC, q.box_level ASC, q.sm2_ease_factor ASC, q.next_review_date ASC, q.id ASC
          LIMIT ?1",
     )?;
     let items = stmt
@@ -677,8 +677,10 @@ pub struct QuizAnswerRequest {
 }
 
 /// Grades server-side (the correct index never leaves the database until the
-/// answer is committed) and reschedules through the same per-item Leitner
-/// logic the flashcards use.
+/// answer is committed) and reschedules through the same explicit SM-2
+/// algorithm as flashcards. A QCM success maps to quality 4: it demonstrates
+/// solid recall, but remains recognition among options rather than a fully
+/// unaided response.
 pub async fn answer_quiz_item(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<QuizAnswerRequest>) -> Result<Json<QuizAnswerResult>, AppError> {
     with_conn(&state.db, |conn| answer_quiz_item_inner(conn, id, body.choice))
         .map(Json)
@@ -686,27 +688,39 @@ pub async fn answer_quiz_item(State(state): State<AppState>, Path(id): Path<i64>
 }
 
 fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::Result<QuizAnswerResult> {
-    let (correct, explication, option_feedbacks_json, current_box): (i64, Option<String>, Option<String>, i64) = conn.query_row(
-        "SELECT correct, explication, option_feedbacks_json, box_level FROM quiz_items WHERE id = ?1",
+    let (correct, explication, option_feedbacks_json, current_box, repetitions, interval_days, ease_factor): (i64, Option<String>, Option<String>, i64, i64, i64, f64) = conn.query_row(
+        "SELECT correct, explication, option_feedbacks_json, box_level, sm2_repetitions, sm2_interval_days, sm2_ease_factor FROM quiz_items WHERE id = ?1",
         params![id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
     )?;
     let was_correct = choice == correct;
     let choice_feedback = parse_option_feedbacks(option_feedbacks_json.as_deref())
         .get(choice.max(0) as usize)
         .map(String::to_owned);
     let today = chrono::Local::now().date_naive();
-    let (box_level, next_review_date) = scheduler::next_card_schedule(current_box, was_correct, today, read_exam_date(conn));
+    let quality = if was_correct { 4 } else { 1 };
+    let schedule = scheduler::next_sm2_card_schedule(
+        scheduler::Sm2CardState { repetitions, interval_days, ease_factor },
+        quality,
+        today,
+        read_exam_date(conn),
+    );
+    // Keep legacy values readable for historical displays; SM-2 controls the
+    // next date, repetitions and ease factor.
+    let box_level = if was_correct { current_box + 1 } else { 0 }.clamp(0, 5);
 
     conn.execute(
         "UPDATE quiz_items SET
             box_level = ?1,
             correct_streak = CASE WHEN ?2 THEN correct_streak + 1 ELSE 0 END,
-            next_review_date = ?3,
+            sm2_repetitions = ?3,
+            sm2_interval_days = ?4,
+            sm2_ease_factor = ?5,
+            next_review_date = ?6,
             last_reviewed_at = datetime('now'),
             updated_at = datetime('now')
-         WHERE id = ?4",
-        params![box_level, was_correct, next_review_date.to_string(), id],
+         WHERE id = ?7",
+        params![box_level, was_correct, schedule.repetitions, schedule.interval_days, schedule.ease_factor, schedule.next_review_date.to_string(), id],
     )?;
 
     Ok(QuizAnswerResult {
@@ -715,7 +729,7 @@ fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::
         explication,
         choice_feedback,
         box_level,
-        next_review_date: next_review_date.to_string(),
+        next_review_date: schedule.next_review_date.to_string(),
     })
 }
 
@@ -1357,7 +1371,11 @@ mod tests {
         let right = answer_quiz_item_inner(&conn, 1, 1).unwrap();
         assert!(right.was_correct);
         assert_eq!(right.box_level, 1);
-        assert_eq!(right.next_review_date, local_date_plus(2));
+        assert_eq!(right.next_review_date, local_date_plus(1));
+
+        let second_right = answer_quiz_item_inner(&conn, 1, 1).unwrap();
+        assert!(second_right.was_correct);
+        assert_eq!(second_right.next_review_date, local_date_plus(6));
 
         let deck = list_due_quiz_inner(&conn).unwrap();
         assert_eq!(deck.total, 0); // rescheduled out of today
