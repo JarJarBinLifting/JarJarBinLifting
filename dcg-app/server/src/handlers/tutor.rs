@@ -338,11 +338,14 @@ fn grade_flashcard(conn: &Connection, id: i64, quality: i64) -> rusqlite::Result
 /// (roughly 5 minutes) beats an unbounded backlog wall after a few days
 /// away. Whatever doesn't fit simply stays due and fills tomorrow's deck.
 const DAILY_DECK_LIMIT: i64 = 20;
+/// Inspect a wider due pool before selecting the bounded daily deck. This
+/// gives the interleaver enough choice to alternate notions instead of merely
+/// taking the first twenty rows from one chapter.
+const DAILY_DECK_CANDIDATE_LIMIT: i64 = DAILY_DECK_LIMIT * 4;
 
 /// The daily card deck: every card whose review date has arrived, weakest
-/// box first (an error-note card at box 0 outranks a comfortable box-4
-/// card), oldest due date as tiebreak. Costs zero LLM calls — the cards
-/// already exist.
+/// state first, then deliberately interleaved across chapters and notions.
+/// Costs zero LLM calls — the cards already exist.
 pub async fn list_due_flashcards(State(state): State<AppState>) -> Result<Json<DueFlashcardsResponse>, AppError> {
     with_conn(&state.db, |conn| list_due_flashcards_inner(conn))
         .map(Json)
@@ -365,7 +368,7 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
          LIMIT ?1",
     )?;
     let cards = stmt
-        .query_map(params![DAILY_DECK_LIMIT], |row| {
+        .query_map(params![DAILY_DECK_CANDIDATE_LIMIT], |row| {
             Ok(DueFlashcard {
                 id: row.get(0)?,
                 chapter_id: row.get(1)?,
@@ -382,7 +385,30 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(DueFlashcardsResponse { total, cards })
+    Ok(DueFlashcardsResponse { total, cards: interleave_due_cards(cards, DAILY_DECK_LIMIT as usize) })
+}
+
+/// Preserves the server's priority order while avoiding two cards from the
+/// same notion or chapter when another due card is available. This is a small,
+/// deterministic form of interleaving: it makes the learner retrieve and
+/// discriminate between nearby rules instead of answering a run of almost
+/// identical prompts by pattern matching.
+fn interleave_due_cards(mut candidates: Vec<DueFlashcard>, limit: usize) -> Vec<DueFlashcard> {
+    let mut deck: Vec<DueFlashcard> = Vec::with_capacity(limit.min(candidates.len()));
+    while deck.len() < limit && !candidates.is_empty() {
+        let selected = if let Some(last) = deck.last() {
+            candidates
+                .iter()
+                .position(|card| card.chapter_id != last.chapter_id && card.concept_id != last.concept_id)
+                .or_else(|| candidates.iter().position(|card| card.concept_id != last.concept_id))
+                .or_else(|| candidates.iter().position(|card| card.chapter_id != last.chapter_id))
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        deck.push(candidates.remove(selected));
+    }
+    deck
 }
 
 #[derive(Debug, Deserialize)]
@@ -1075,6 +1101,32 @@ mod tests {
         assert_eq!(deck.cards[0].question, "faible"); // box 0 outranks box 3
         assert!(deck.cards.iter().all(|c| c.question != "pas encore due"));
         assert_eq!(deck.cards[0].ue_code, "UE1");
+    }
+
+    #[test]
+    fn due_cards_are_interleaved_when_an_alternative_notion_exists() {
+        let card = |id: i64, chapter_id: i64, concept_id: &str| DueFlashcard {
+            id,
+            chapter_id,
+            chapter_name: format!("Chapitre {chapter_id}"),
+            ue_code: "UE1".to_string(),
+            ue_color: None,
+            concept_id: Some(concept_id.to_string()),
+            question: format!("Question {id}"),
+            answer: "Réponse".to_string(),
+            box_level: 0,
+            sm2_repetitions: 0,
+            sm2_interval_days: 1,
+            sm2_ease_factor: 2.5,
+        };
+        let deck = interleave_due_cards(
+            vec![card(1, 1, "A"), card(2, 1, "A"), card(3, 1, "B"), card(4, 2, "A"), card(5, 2, "B")],
+            5,
+        );
+        assert_eq!(deck.len(), 5);
+        assert_ne!(deck[0].chapter_id, deck[1].chapter_id);
+        assert_ne!(deck[0].concept_id, deck[1].concept_id);
+        assert_ne!(deck[1].chapter_id, deck[2].chapter_id);
     }
 
     #[test]

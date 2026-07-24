@@ -328,6 +328,9 @@ export interface QcmQuestion {
   options: string[];
   correct: number;
   explication: string;
+  /** Optional on older imports; aligned with `options` and explains why each
+   * choice is right or tempting. */
+  option_feedbacks?: string[];
 }
 
 export interface Qcm {

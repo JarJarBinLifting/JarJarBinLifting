@@ -10,6 +10,7 @@ import type { DueFlashcard } from "../../lib/types";
 export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; total: number; onClose: () => void }) {
   const [idx, setIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [attempt, setAttempt] = useState("");
   const [known, setKnown] = useState(0);
   const [saving, setSaving] = useState(false);
   const card: DueFlashcard | undefined = cards[idx];
@@ -18,14 +19,15 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
   // double keypress from grading the same card twice before React re-renders.
   const gradingRef = useRef(false);
 
-  const grade = async (correct: boolean) => {
+  const grade = async (quality: number) => {
     if (gradingRef.current || !card) return;
     gradingRef.current = true;
     setSaving(true);
     try {
-      await api.updateFlashcardProgress(card.id, correct);
-      if (correct) setKnown((k) => k + 1);
+      await api.updateFlashcardProgress(card.id, quality);
+      if (quality >= 3) setKnown((k) => k + 1);
       setRevealed(false);
+      setAttempt("");
       setIdx((i) => i + 1);
     } finally {
       gradingRef.current = false;
@@ -43,19 +45,21 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
         if (e.key === "Enter" || e.key === " ") onClose();
         return;
       }
-      if (!revealed && (e.key === " " || e.key === "Enter")) {
+      if (!revealed && attempt.trim() && (e.key === " " || e.key === "Enter")) {
         e.preventDefault();
         setRevealed(true);
+      } else if (revealed && /^[0-5]$/.test(e.key)) {
+        grade(Number(e.key));
       } else if (revealed && e.key === "ArrowRight") {
-        grade(true);
+        grade(4);
       } else if (revealed && e.key === "ArrowLeft") {
-        grade(false);
+        grade(1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed, done, idx]);
+  }, [revealed, done, idx, attempt]);
 
   const remaining = total - cards.length;
 
@@ -77,8 +81,8 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
             </div>
             <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>
               {known === cards.length
-                ? "Sans faute — chaque carte revient plus tard, quand tu commencerais à l'oublier."
-                : "Les cartes ratées reviennent dès demain ; les autres s'espacent."}
+                ? "Sans faute — SM‑2 espacera chaque carte jusqu'au prochain rappel utile."
+                : "Les cartes mal rappelées reviennent demain ; les autres s'espacent selon la qualité de ton rappel."}
             </p>
             {remaining > 0 && (
               <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 14 }}>
@@ -104,6 +108,9 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: card.ue_color ?? "var(--muted)", textTransform: "uppercase", marginBottom: 8 }}>
               {card.ue_code} · {card.chapter_name}
             </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>
+              SM‑2 · {card.sm2_repetitions} rappel{card.sm2_repetitions > 1 ? "s" : ""} réussi{card.sm2_repetitions > 1 ? "s" : ""}
+            </div>
             <div style={{ fontFamily: "var(--font-story)", fontSize: 17, lineHeight: 1.55, color: "var(--text)", minHeight: 64, marginBottom: 16 }}>
               {card.question}
             </div>
@@ -125,24 +132,49 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
                 >
                   {card.answer}
                 </div>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button
-                    className="soft-button"
-                    disabled={saving}
-                    onClick={() => grade(false)}
-                    style={{ flex: 1, color: "var(--accent-red)", borderColor: "color-mix(in srgb, var(--accent-red) 45%, var(--input-border))" }}
-                  >
-                    ← À revoir
-                  </button>
-                  <button className="primary-button" disabled={saving} onClick={() => grade(true)} style={{ flex: 1 }}>
-                    Je savais →
-                  </button>
+                <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, margin: "0 0 9px" }}>
+                  Compare avec ta réponse, puis note honnêtement la qualité de ton rappel.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
+                  {[
+                    { quality: 0, label: "Oubliée", hint: "Aucun rappel" },
+                    { quality: 2, label: "Difficile", hint: "Avec effort" },
+                    { quality: 3, label: "Hésitante", hint: "Presque juste" },
+                    { quality: 4, label: "Bonne", hint: "Juste" },
+                    { quality: 5, label: "Évidente", hint: "Immédiate" },
+                  ].map((rating) => (
+                    <button
+                      key={rating.quality}
+                      className={rating.quality >= 3 ? "primary-button" : "soft-button"}
+                      disabled={saving}
+                      onClick={() => grade(rating.quality)}
+                      title={`Qualité SM‑2 ${rating.quality} : ${rating.hint}`}
+                      style={{ minHeight: 55, padding: "7px 4px", fontSize: 10, lineHeight: 1.15, color: rating.quality < 3 ? "var(--accent-red)" : undefined }}
+                    >
+                      <b style={{ display: "block", fontSize: 12 }}>{rating.quality}</b>
+                      {rating.label}
+                    </button>
+                  ))}
                 </div>
+                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", marginTop: 8 }}>Touches 0–5 · 0–2 relancent la carte, 3–5 l'espacent.</div>
               </>
             ) : (
-              <button className="primary-button" style={{ width: "100%" }} onClick={() => setRevealed(true)}>
-                Voir la réponse (espace)
-              </button>
+              <>
+                <label style={{ display: "block", fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 8 }}>
+                  Formule d'abord ta réponse — un mot-clé suffit. C'est le rappel actif qui fixe la règle.
+                </label>
+                <textarea
+                  value={attempt}
+                  onChange={(event) => setAttempt(event.target.value)}
+                  rows={2}
+                  autoFocus
+                  placeholder="Ma réponse / mon raisonnement…"
+                  style={{ width: "100%", boxSizing: "border-box", background: "var(--input)", color: "var(--text)", border: "1px solid var(--input-border)", borderRadius: 2, padding: 10, font: "inherit", fontSize: 13, lineHeight: 1.5, marginBottom: 10 }}
+                />
+                <button className="primary-button" disabled={!attempt.trim()} style={{ width: "100%" }} onClick={() => setRevealed(true)}>
+                  Comparer avec la réponse (espace)
+                </button>
+              </>
             )}
 
             <div style={{ marginTop: 14, textAlign: "center" }}>

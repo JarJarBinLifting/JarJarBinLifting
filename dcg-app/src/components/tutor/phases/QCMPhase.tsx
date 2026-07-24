@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import type { Qcm, QcmQuestion } from "../../../lib/types";
 import { TutorSpin, Consigne } from "../shared";
 
+function feedbackForChoice(question: QcmQuestion, choice: number | undefined) {
+  if (choice === undefined) return question.explication;
+  const targeted = question.option_feedbacks?.[choice];
+  if (!targeted) return question.explication;
+  return choice === question.correct
+    ? targeted
+    : `${targeted}\n\nLa règle à retenir : ${question.explication}`;
+}
+
 export function QCMPhase({
   qcm,
   difficulty,
@@ -105,7 +114,7 @@ export function QCMPhase({
             <div className={`tutor-feedback-box ${sel === q.correct ? "tutor-fb-good" : "tutor-fb-partial"}`} style={{ marginBottom: 0 }}>
               <strong>{sel === q.correct ? "Exact !" : "Pas celle-ci — et maintenant tu sais pourquoi :"}</strong>
               <br />
-              {q.explication}
+              <span style={{ whiteSpace: "pre-line" }}>{feedbackForChoice(q, sel)}</span>
             </div>
           )}
         </div>
@@ -195,7 +204,7 @@ export function QCMPhase({
                 );
               })}
             </div>
-            {done && <p style={{ margin: "7px 0 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: 7, lineHeight: 1.5 }}>{q.explication}</p>}
+            {done && <p style={{ margin: "7px 0 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: 7, lineHeight: 1.5, whiteSpace: "pre-line" }}>{feedbackForChoice(q, ans[qi])}</p>}
           </div>
         ))}
       </div>
