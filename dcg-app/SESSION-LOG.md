@@ -154,3 +154,18 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 - La date transmise par l'API est interpretee comme une date de calendrier locale afin d'eviter un decalage de jour lie au fuseau horaire du navigateur.
 - Lint frontend, build frontend, **57 tests Rust**, build serveur et demarrage reel sont reussis. L'endpoint `GET /api/tutor/quiz/due` a repondu `HTTP 200`.
 - Commit : `dbc6af2 feat: show quiz review timing`. Aucune dependance ni migration ajoutee.
+
+---
+
+# Poursuite autonome - plan quotidien par notion fragile
+
+## Ce qui est fait et teste
+
+- La Revision eclair construit maintenant un plan avant d'afficher la premiere carte. Elle cible d'abord la notion due la moins consolidee, puis place une carte d'une notion differente en deuxieme position. Lorsqu'il existe une autre notion due dans le meme chapitre, elle est choisie en premier pour comparer des regles proches ; sinon l'alternance utilise une autre notion due.
+- Le plan affiche les deux notions choisies et explique la raison de l'alternance. Le reste du paquet conserve l'entrelacement serveur existant. Si la lecture de progression echoue temporairement, la revision reste disponible avec le paquet SM-2 normal.
+- Lint frontend, build frontend, **57 tests Rust**, build serveur et demarrage reel sont reussis. `GET /api/tutor/concepts/progress` a repondu `HTTP 200` et a retourne 22 notions sur la base locale de verification.
+- Commit : `4f4d566 feat: target daily reviews by concept`. Aucune dependance ni migration ajoutee.
+
+## Decisions a valider
+
+- La proximite entre notions est actuellement approximee par le meme chapitre, car les lecons JSON ne portent pas encore de liens explicites de confusion. Ajouter plus tard un champ optionnel de notions souvent confondues permettrait un entrelacement encore plus precis sans changer les cartes existantes.
