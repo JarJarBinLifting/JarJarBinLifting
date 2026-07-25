@@ -54,10 +54,14 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
   const [known, setKnown] = useState(0);
   const [saving, setSaving] = useState(false);
   const [plan, setPlan] = useState<ReviewPlan | null>(null);
+  const [comparisonAttempt, setComparisonAttempt] = useState("");
+  const [comparisonRevealed, setComparisonRevealed] = useState(false);
+  const [comparisonDone, setComparisonDone] = useState(false);
   const preparingPlan = plan === null;
   const reviewCards = plan?.cards ?? [];
   const card: DueFlashcard | undefined = reviewCards[idx];
   const done = !preparingPlan && idx >= reviewCards.length;
+  const comparisonPending = Boolean(plan?.primaryCard && plan?.contrastCard && !comparisonDone);
   // Grading is fire-and-verify: the guard ref (not just state) prevents a
   // double keypress from grading the same card twice before React re-renders.
   const gradingRef = useRef(false);
@@ -65,6 +69,9 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
   useEffect(() => {
     let active = true;
     setPlan(null);
+    setComparisonAttempt("");
+    setComparisonRevealed(false);
+    setComparisonDone(false);
     api.listConceptProgress()
       .then((concepts) => { if (active) setPlan(buildReviewPlan(cards, concepts)); })
       // A review must remain usable if the progress endpoint is briefly down.
@@ -94,7 +101,7 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
         onClose();
         return;
       }
-      if (preparingPlan) return;
+      if (preparingPlan || comparisonPending) return;
       if (done) {
         if (e.key === "Enter" || e.key === " ") onClose();
         return;
@@ -113,7 +120,7 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed, done, idx, attempt, preparingPlan]);
+  }, [revealed, done, idx, attempt, preparingPlan, comparisonPending]);
 
   const remaining = total - cards.length;
 
@@ -129,6 +136,51 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
       >
         {preparingPlan ? (
           <Spin text="Préparation du plan de rappel par notion…" />
+        ) : comparisonPending && plan?.primaryCard && plan?.contrastCard ? (
+          <div style={{ padding: "4px 0" }}>
+            <div className="section-kicker" style={{ color: "var(--accent-purple)", marginBottom: 8 }}>Confusion à clarifier</div>
+            <h3 style={{ fontFamily: "var(--font-story)", fontSize: 20, color: "var(--text)", margin: "0 0 8px" }}>
+              Distingue ces deux notions avant de revoir les règles
+            </h3>
+            <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
+              Explique de mémoire ce qui sépare <strong>{conceptName(plan.primary, plan.primaryCard)}</strong> et <strong>{conceptName(plan.contrast, plan.contrastCard)}</strong>. C'est la comparaison active qui évite de reconnaître une règle sans savoir quand l'appliquer.
+            </p>
+            {!comparisonRevealed ? (
+              <>
+                <textarea
+                  value={comparisonAttempt}
+                  onChange={(event) => setComparisonAttempt(event.target.value)}
+                  rows={3}
+                  autoFocus
+                  placeholder="La différence décisive selon moi…"
+                  style={{ width: "100%", boxSizing: "border-box", background: "var(--input)", color: "var(--text)", border: "1px solid var(--input-border)", borderRadius: 2, padding: 10, font: "inherit", fontSize: 13, lineHeight: 1.5, marginBottom: 10 }}
+                />
+                <button className="primary-button" disabled={!comparisonAttempt.trim()} style={{ width: "100%" }} onClick={() => setComparisonRevealed(true)}>
+                  Comparer avec les deux règles
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
+                  {[
+                    { card: plan.primaryCard, concept: plan.primary, color: "var(--accent-purple)" },
+                    { card: plan.contrastCard, concept: plan.contrast, color: "var(--accent-cyan)" },
+                  ].map(({ card: comparedCard, concept, color }) => (
+                    <div key={comparedCard.id} style={{ background: "var(--card2)", border: "1px solid var(--border)", borderTop: `3px solid ${color}`, borderRadius: 2, padding: "10px 11px" }}>
+                      <div style={{ fontSize: 10, color, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", marginBottom: 5 }}>{conceptName(concept, comparedCard)}</div>
+                      <div style={{ color: "var(--text)", fontSize: 12, lineHeight: 1.55 }}>{comparedCard.answer}</div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "0 0 12px" }}>
+                  Repère le critère qui fait basculer d'une règle à l'autre, puis garde-le en tête pendant le QCM : les distracteurs s'appuient souvent sur cette confusion.
+                </p>
+                <button className="primary-button" style={{ width: "100%" }} onClick={() => setComparisonDone(true)}>
+                  Commencer la révision ciblée
+                </button>
+              </>
+            )}
+          </div>
         ) : done ? (
           <div style={{ textAlign: "center", padding: "18px 4px" }}>
             <div className="section-kicker" style={{ marginBottom: 10 }}>Révision éclair terminée</div>
