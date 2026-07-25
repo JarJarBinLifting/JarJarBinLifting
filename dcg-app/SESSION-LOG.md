@@ -169,3 +169,18 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Decisions a valider
 
 - La proximite entre notions est actuellement approximee par le meme chapitre, car les lecons JSON ne portent pas encore de liens explicites de confusion. Ajouter plus tard un champ optionnel de notions souvent confondues permettrait un entrelacement encore plus precis sans changer les cartes existantes.
+
+---
+
+# Poursuite autonome - mode confusions frequentes (premiere brique)
+
+## Ce qui est fait et teste
+
+- Avant la revision de deux notions distinctes selectionnees dans le meme chapitre, l'app demande maintenant une comparaison ecrite : l'etudiant formule la difference decisive avant de voir les deux regles cote a cote. Cette question comparative est construite localement a partir des flashcards existantes, sans appel LLM ni nouvelle donnee.
+- La reprise ciblee ne commence qu'apres cette exposition. Le QCM de la lecon conserve ensuite ses distracteurs et feedbacks par option, deja demandes par le prompt d'import ; le rappel actif et le feedback explicatif sont donc lies dans un meme flux.
+- Lint frontend, build frontend, **57 tests Rust**, build serveur et demarrage reel sont reussis. `GET /api/tutor/concepts/progress` a repondu `HTTP 200` avec 22 notions sur la base locale de verification.
+- Commit : `d534480 feat: add active comparison review`. Aucune dependance ni migration ajoutee.
+
+## Decisions a valider
+
+- Cette premiere version choisit les paires a comparer parmi les notions dues du meme chapitre, car le schema JSON actuel ne transporte pas encore de paires de confusion declarees. L'etape suivante sera d'ajouter un champ optionnel `confusions_frequentes` au fichier de lecon et au prompt d'import, afin de choisir les paires pedagogiquement exactes plutot que de se fier a la proximite de chapitre.
