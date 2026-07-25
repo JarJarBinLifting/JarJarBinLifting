@@ -234,3 +234,38 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 - Un premier contrôle HTTP avec `Invoke-WebRequest` a échoué à cause d'une exception PowerShell locale ; la même vérification avec `curl.exe` a confirmé les trois réponses `HTTP 200`.
 - Le dépôt contient toujours de nombreuses modifications utilisateur non commit ; chaque commit créé ici ne contient que les fichiers propres à l'amélioration concernée.
+
+---
+
+# Rapport final — boucle « préparation examen » du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- **Annales réellement actionnables :** toute réponse à moins de 50 % crée désormais, en plus de la note d’erreur et de la carte libre, un mini-QCM lié au chapitre. Il reprend la réponse réellement donnée comme distracteur, explique précisément la perte de points, fournit la règle/correction attendue et repart au début de l’algorithme SM-2. Commit : `e12885b feat: schedule annale recovery plans`.
+- **Contrôle qualité des leçons JSON :** l’import analyse maintenant le rattachement UE/chapitre, les notions oubliées par étape, les contradictions entre flashcards, les doublons de QCM, les distracteurs sans véritable feedback et les justifications insuffisantes. Les incohérences bloquantes empêchent l’import ; les limites non certaines sont affichées comme avertissements. Commit : `9136b97 feat: audit imported lesson quality`.
+- **Carte de risque par notion :** Pilotage affiche un statut **fragile**, **en consolidation** ou **fiable**, fondé sur le rappel sans aide (cartes maîtrisées), la stabilité SM-2, les erreurs liées des 21 derniers jours, la dernière exposition et les révisions dues. Commit : `7387758 feat: assess exam readiness by concept`.
+- **Simulations adaptatives :** le tableau de bord lance une simulation de 12 minutes à partir des notions les plus faibles et du contenu personnel importé. Chaque item demande une rédaction, un calcul/vérification ou une application avant de révéler le corrigé ; l’auto-évaluation programme ensuite la carte avec SM-2. Commit : `0d2fcba feat: add adaptive exam simulations`.
+- Validation finale : `cargo fmt --check`, **59 tests Rust** (0 échec), lint et build client, build serveur de production, puis démarrage réel. `/`, `/api/tutor/concepts/progress` et `/api/annales` ont répondu `HTTP 200` sur le port isolé `4306`.
+- Aucune dépendance et aucune migration destructive n’ont été ajoutées.
+
+## Ce qui est commencé et où j’en suis
+
+- Rien n’est à moitié implémenté sur ces quatre chantiers. Les branchements visuels nécessaires sont actifs dans l’espace de travail courant et passent le build.
+
+## Décisions à valider
+
+- Le rappel « sans aide » est mesuré par les cartes maîtrisées, car le flux Flashcards impose déjà une réponse tapée avant révélation. C’est un indicateur volontairement simple et lisible ; il pourra être enrichi par un historique d’essais quand des données réelles seront disponibles.
+- Le contrôle de cohérence est volontairement conservateur : il peut vérifier la structure, les contradictions internes et le rattachement fourni, mais ne prétend pas établir la véracité factuelle d’un texte de source par un LLM.
+- Les simulations n’inventent pas de cas DCG : elles réemploient le contenu JSON importé et demandent une réponse libre, puis une auto-évaluation SM-2. Ce choix est réversible et évite de fabriquer du contenu de cours non validé.
+- Plusieurs fichiers d’intégration étaient déjà modifiés ou non suivis avant cette boucle. Ils n’ont pas été ajoutés aux commits pour ne pas mélanger le travail existant, mais la version actuelle de l’application les utilise et les validations ci-dessus les couvrent.
+
+## Ce que j’aurais fait ensuite
+
+1. Faire appliquer le même audit de leçon côté serveur aux clients qui contourneraient l’écran d’import.
+2. Ajouter une grille de correction par compétence aux simulations de rédaction et de calcul, sans simuler une correction automatique non fiable.
+3. Mesurer, par UE, l’effet réel des plans de reprise d’annale sur les scores des sessions suivantes.
+
+## Surprises rencontrées
+
+- Les requêtes de planification déjà présentes classaient utilement les notions faibles ; la simulation a pu s’y raccorder sans nouvelle dépendance ni nouvelle table.
+- Le dépôt garde des modifications utilisateur non commit. Chaque commit de cette livraison isole seulement le fichier nouveau et testé correspondant à la tâche concernée.
