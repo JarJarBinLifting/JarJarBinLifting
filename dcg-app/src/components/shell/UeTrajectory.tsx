@@ -1,6 +1,6 @@
 import { DEFAULT_EXAM_DATE, getExamPhase } from "../../lib/examPlan";
 import { buildUeTrajectories, type UeTrajectoryStatus } from "../../lib/ueTrajectory";
-import type { Chapter, QcmScoreRow, Ue } from "../../lib/types";
+import type { AnnaleAttempt, Chapter, QcmScoreRow, Ue } from "../../lib/types";
 
 const STATUS_COPY: Record<UeTrajectoryStatus, { label: string; color: string }> = {
   priority: { label: "Priorité", color: "var(--t-err)" },
@@ -14,15 +14,17 @@ export function UeTrajectory({
   chapters,
   qcmScores,
   examDate,
+  annales,
 }: {
   ues: Ue[];
   chapters: Chapter[];
   qcmScores: QcmScoreRow[];
   examDate?: string | null;
+  annales: AnnaleAttempt[];
 }) {
   const targetDate = examDate || DEFAULT_EXAM_DATE;
   const phase = getExamPhase(targetDate);
-  const trajectories = buildUeTrajectories(ues, chapters, qcmScores, targetDate);
+  const trajectories = buildUeTrajectories(ues, chapters, qcmScores, targetDate, new Date(), annales);
 
   if (!trajectories.length) return null;
 
@@ -56,7 +58,10 @@ export function UeTrajectory({
                   <i style={{ display: "block", width: `${trajectory.completionPercent}%`, height: "100%", background: trajectory.ue.color ?? "var(--accent-blue)" }} />
                 </div>
               </div>
-              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>{trajectory.recommendation}</p>
+              <div>
+                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>{trajectory.recommendation}</p>
+                {trajectory.annaleRecommendation && <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid var(--border)", color: "var(--muted)", fontSize: 10, lineHeight: 1.45 }}><strong style={{ color: "var(--accent-blue)" }}>Annale conseillée · {trajectory.annaleRecommendation.durationMinutes} min</strong><br />{trajectory.annaleRecommendation.copy}</div>}
+              </div>
             </div>
           );
         })}

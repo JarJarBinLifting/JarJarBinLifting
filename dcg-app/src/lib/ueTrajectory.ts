@@ -1,5 +1,6 @@
 import { DEFAULT_EXAM_DATE, getExamPhase, type ExamPhaseId } from "./examPlan";
-import type { Chapter, QcmScoreRow, Ue } from "./types";
+import type { AnnaleAttempt, Chapter, QcmScoreRow, Ue } from "./types";
+import { recommendNextAnnale, type AnnaleRecommendation } from "./annaleRecommendation";
 
 export type UeTrajectoryStatus = "complete" | "on_track" | "priority" | "start";
 
@@ -13,6 +14,7 @@ export interface UeTrajectory {
   nextChapter: string | null;
   status: UeTrajectoryStatus;
   recommendation: string;
+  annaleRecommendation: AnnaleRecommendation | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -74,6 +76,7 @@ export function buildUeTrajectories(
   qcmScores: QcmScoreRow[],
   examIso = DEFAULT_EXAM_DATE,
   now = new Date(),
+  annales: AnnaleAttempt[] = [],
 ): UeTrajectory[] {
   const phase = getExamPhase(examIso, now).id;
   const expected = expectedCoveragePercent(examIso, now);
@@ -97,6 +100,7 @@ export function buildUeTrajectories(
         expectedCoveragePercent: expected,
         qcmPercent,
         nextChapter,
+        annaleRecommendation: recommendNextAnnale(ue.id, annales),
         ...next,
       };
     })

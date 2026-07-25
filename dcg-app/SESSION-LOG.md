@@ -380,3 +380,18 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Surprises rencontrées
 
 - Les fichiers de route, API et écran Progrès étaient déjà modifiés dans le workspace. Le branchement est actif et couvert par les builds/tests, mais ces fichiers restent hors du commit afin de préserver les changements existants.
+---
+
+# Rapport final — chantier 5 : annale conseillée par UE du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- La trajectoire de chaque UE exploite maintenant les annales réellement terminées et notées. Après au moins deux copies, elle conseille un extrait chronométré de 30, 45 ou 60 minutes.
+- La durée est explicite et réversible : 30 min si le dernier score est fragile ou baisse nettement, 45 min en consolidation, 60 min quand le niveau est au moins 75 % et stable/progressif.
+- Le message affiche la dernière performance et rappelle que chaque point perdu doit passer par la reprise d’annale ; aucune note officielle ni date fictive n’est déduite.
+- Validation : build client et lint (six avertissements Fast Refresh préexistants). Aucune dépendance, migration ou donnée existante n’a été modifiée.
+
+## Décisions à valider
+
+- « Comparable » signifie ici deux annales corrigées et normalisées en pourcentage dans la même UE. Les durées ou années de sujet ne sont pas assimilées à une mesure d’examen officielle ; la recommandation reste donc un prochain format d’entraînement, pas une prédiction.
+- La baisse nette est fixée à 10 points ; sous ce seuil, la durée dépend uniquement du dernier pourcentage.
