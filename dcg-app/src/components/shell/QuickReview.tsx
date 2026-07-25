@@ -1,6 +1,46 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import type { DueFlashcard } from "../../lib/types";
+import type { ConceptProgress, DueFlashcard } from "../../lib/types";
+import { Spin } from "./common";
+
+type ReviewPlan = {
+  cards: DueFlashcard[];
+  primary: ConceptProgress | null;
+  contrast: ConceptProgress | null;
+  primaryCard: DueFlashcard | undefined;
+  contrastCard: DueFlashcard | undefined;
+};
+
+const conceptKey = (chapterId: number, conceptId: string | null) => `${chapterId}:${conceptId ?? "general"}`;
+
+function buildReviewPlan(cards: DueFlashcard[], concepts: ConceptProgress[]): ReviewPlan {
+  const cardFor = (concept: ConceptProgress) => cards.find((card) => conceptKey(card.chapter_id, card.concept_id) === conceptKey(concept.chapter_id, concept.concept_id));
+  const primary = concepts.find((concept) => concept.due_cards > 0 && cardFor(concept)) ?? null;
+  const primaryCard = primary ? cardFor(primary) : cards[0];
+  const primaryKey = primaryCard ? conceptKey(primaryCard.chapter_id, primaryCard.concept_id) : null;
+
+  // Prefer another notion from the same lesson: it creates a useful contrast
+  // between nearby rules. Fall back to any other due notion when necessary.
+  const isDifferentDueConcept = (concept: ConceptProgress) => concept.due_cards > 0
+    && Boolean(cardFor(concept))
+    && conceptKey(concept.chapter_id, concept.concept_id) !== primaryKey;
+  const contrast = primary
+    ? concepts.find((concept) => concept.chapter_id === primary.chapter_id && isDifferentDueConcept(concept))
+      ?? concepts.find(isDifferentDueConcept)
+      ?? null
+    : null;
+  const contrastCard = contrast ? cardFor(contrast) : cards.find((card) => conceptKey(card.chapter_id, card.concept_id) !== primaryKey);
+
+  const leading = [primaryCard, contrastCard].filter((card): card is DueFlashcard => Boolean(card));
+  const chosen = new Set(leading.map((card) => card.id));
+  return { cards: [...leading, ...cards.filter((card) => !chosen.has(card.id))], primary, contrast, primaryCard, contrastCard };
+}
+
+function conceptName(concept: ConceptProgress | null, card: DueFlashcard | undefined): string | null {
+  if (concept?.concept_label) return concept.concept_label;
+  if (card?.concept_id) return `Notion ${card.concept_id}`;
+  return card?.chapter_name ?? null;
+}
 
 /** Révision éclair: a bounded daily flip-card deck. Every card already
  * exists in the database (generated during past tutor sessions or minted
@@ -13,11 +53,24 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
   const [attempt, setAttempt] = useState("");
   const [known, setKnown] = useState(0);
   const [saving, setSaving] = useState(false);
-  const card: DueFlashcard | undefined = cards[idx];
-  const done = idx >= cards.length;
+  const [plan, setPlan] = useState<ReviewPlan | null>(null);
+  const preparingPlan = plan === null;
+  const reviewCards = plan?.cards ?? [];
+  const card: DueFlashcard | undefined = reviewCards[idx];
+  const done = !preparingPlan && idx >= reviewCards.length;
   // Grading is fire-and-verify: the guard ref (not just state) prevents a
   // double keypress from grading the same card twice before React re-renders.
   const gradingRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    setPlan(null);
+    api.listConceptProgress()
+      .then((concepts) => { if (active) setPlan(buildReviewPlan(cards, concepts)); })
+      // A review must remain usable if the progress endpoint is briefly down.
+      .catch(() => { if (active) setPlan(buildReviewPlan(cards, [])); });
+    return () => { active = false; };
+  }, [cards]);
 
   const grade = async (quality: number) => {
     if (gradingRef.current || !card) return;
@@ -41,6 +94,7 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
         onClose();
         return;
       }
+      if (preparingPlan) return;
       if (done) {
         if (e.key === "Enter" || e.key === " ") onClose();
         return;
@@ -59,7 +113,7 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed, done, idx, attempt]);
+  }, [revealed, done, idx, attempt, preparingPlan]);
 
   const remaining = total - cards.length;
 
@@ -73,7 +127,9 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
         onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: 560, width: "100%", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 24 }}
       >
-        {done ? (
+        {preparingPlan ? (
+          <Spin text="Préparation du plan de rappel par notion…" />
+        ) : done ? (
           <div style={{ textAlign: "center", padding: "18px 4px" }}>
             <div className="section-kicker" style={{ marginBottom: 10 }}>Révision éclair terminée</div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 30, color: "var(--text)", marginBottom: 8 }}>
@@ -98,12 +154,23 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14 }}>
               <div className="section-kicker">Révision éclair</div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
-                {idx + 1} / {cards.length}
+                {idx + 1} / {reviewCards.length}
               </div>
             </div>
             <div style={{ height: 4, background: "var(--track)", borderRadius: 4, overflow: "hidden", marginBottom: 18 }}>
-              <div className="pfill" style={{ width: `${(idx / cards.length) * 100}%`, height: "100%", background: "var(--accent-blue)" }} />
+              <div className="pfill" style={{ width: `${(idx / reviewCards.length) * 100}%`, height: "100%", background: "var(--accent-blue)" }} />
             </div>
+
+            {plan.primaryCard && (
+              <div style={{ background: "var(--card2)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-purple)", borderRadius: 2, padding: "9px 11px", marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: "var(--accent-purple)", fontWeight: 800, letterSpacing: .7, textTransform: "uppercase", marginBottom: 3 }}>Plan du jour par notion</div>
+                <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
+                  <strong>1. Sécuriser :</strong> {conceptName(plan.primary, plan.primaryCard)}
+                  {plan.contrastCard && <><br /><strong>2. Alterner avec :</strong> {conceptName(plan.contrast, plan.contrastCard)}</>}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.45, marginTop: 4 }}>Une notion fragile, puis une autre règle : l'alternance évite le faux sentiment de maîtrise.</div>
+              </div>
+            )}
 
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: card.ue_color ?? "var(--muted)", textTransform: "uppercase", marginBottom: 8 }}>
               {card.ue_code} · {card.chapter_name}
