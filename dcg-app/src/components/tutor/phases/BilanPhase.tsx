@@ -1,5 +1,5 @@
 import type { ConceptConfidence, QcmQuestion } from "../../../lib/types";
-import { overconfidentTitles } from "../analysis";
+import { confidenceCalibration, overconfidentTitles } from "../analysis";
 import { TutorSpin } from "../shared";
 
 export interface BilanData {
@@ -55,6 +55,14 @@ export function BilanPhase({
   const toReview = [...new Set([...weakConcepts, ...missedThemes])];
 
   const overconfident = overconfidentTitles(confidences, missedThemes);
+  const calibration = confidenceCalibration(confidences, qcmScore, qcmTotal);
+  const calibrationCopy = calibration
+    ? calibration.status === "aligned"
+      ? { label: "Confiance réaliste", color: "var(--t-ok)", detail: "Ton estimation avant le QCM correspond bien à ce que tu as démontré." }
+      : calibration.status === "overconfident"
+        ? { label: "Confiance à ajuster", color: "var(--t-err)", detail: "Tu t'estimais plus solide que le rappel actif ne le confirme encore." }
+        : { label: "Confiance prudente", color: "var(--t-acc)", detail: "Tu as mieux réussi le rappel actif que ton estimation ne le laissait penser." }
+    : null;
 
   return (
     <div className="tutor-card" style={{ textAlign: "center" }}>
@@ -80,6 +88,7 @@ export function BilanPhase({
           { v: `${qcmScore}/${qcmTotal}`, l: `QCM${adapted ? " (adapté)" : ""} (${difficulty})`, c: pct >= 80 ? "var(--t-ok)" : pct >= 60 ? "var(--t-acc)" : "var(--t-err)" },
           ...(exoTotal ? [{ v: `${exoScore}/${exoTotal}`, l: "Cas pratique", c: exoScore / exoTotal >= 0.6 ? "var(--t-ok)" : exoScore / exoTotal >= 0.4 ? "var(--t-acc)" : "var(--t-err)" }] : []),
           { v: `${pct}%`, l: "Maîtrise", c: lc },
+          ...(calibrationCopy ? [{ v: calibration!.status === "aligned" ? "✓" : calibration!.status === "overconfident" ? "!" : "↗", l: `Calibration : ${calibrationCopy.label}`, c: calibrationCopy.color }] : []),
         ].map((s, i) => (
           <div key={i} style={{ background: "var(--card2)", padding: 14, borderRadius: 3, border: "1px solid var(--border)" }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: s.c, fontFamily: "var(--font-mono)" }}>{s.v}</div>
@@ -87,6 +96,16 @@ export function BilanPhase({
           </div>
         ))}
       </div>
+
+      {calibration && calibrationCopy && (
+        <div style={{ padding: 12, borderRadius: 2, borderLeft: `3px solid ${calibrationCopy.color}`, textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
+          <strong style={{ color: calibrationCopy.color, fontSize: 13 }}>Calibration de confiance : {calibrationCopy.label}</strong>
+          <p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.6 }}>
+            Avant le QCM, tu estimais ta maîtrise à {calibration.selfRatedPercent} %. Le rappel actif donne {calibration.assessedPercent} %.
+            {" "}{calibrationCopy.detail}
+          </p>
+        </div>
+      )}
 
       <div style={{ padding: 14, borderRadius: 2, borderLeft: `3px solid ${lc}`, textAlign: "left", marginBottom: 14, background: "var(--card2)" }}>
         <strong style={{ color: lc, fontSize: 14 }}>{level} maîtrise</strong>

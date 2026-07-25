@@ -5,6 +5,35 @@ export function avgConfidence(confidences: ConceptConfidence[]): number {
   return confidences.reduce((s, c) => s + c.val, 0) / confidences.length;
 }
 
+export interface ConfidenceCalibration {
+  status: "aligned" | "overconfident" | "cautious";
+  selfRatedPercent: number;
+  assessedPercent: number;
+  gap: number;
+}
+
+/** Compares the learner's pre-QCM confidence (1–3) with demonstrated
+ * retrieval on the QCM. The scale is deliberately explicit: 1 maps to 33%,
+ * 2 to 67%, and 3 to 100%. A 15-point gap is large enough to be useful while
+ * not overreacting to one question. */
+export function confidenceCalibration(
+  confidences: ConceptConfidence[],
+  score: number,
+  total: number,
+): ConfidenceCalibration | null {
+  if (!confidences.length || total <= 0) return null;
+
+  const selfRatedPercent = Math.round((avgConfidence(confidences) / 3) * 100);
+  const assessedPercent = Math.round((score / total) * 100);
+  const gap = assessedPercent - selfRatedPercent;
+  return {
+    status: gap <= -15 ? "overconfident" : gap >= 15 ? "cautious" : "aligned",
+    selfRatedPercent,
+    assessedPercent,
+    gap,
+  };
+}
+
 /** Concepts self-rated "I've got this" (3) whose theme shows up among the
  * QCM questions the student actually missed — the signal the Bilan phase
  * surfaces as a surprise, and the same signal fed into the Leitner update. */
