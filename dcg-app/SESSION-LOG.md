@@ -316,3 +316,25 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 1. Enregistrer l’historique détaillé des scores de simulation par compétence, pas seulement le rappel SM-2 associé.
 2. Ajouter une grille d’évaluation de forme (temps, structure, vérification) pour les simulations longues.
 3. Appliquer la validation de ce format d’exercice aussi côté serveur pour les futurs chemins d’import directs.
+---
+
+# Rapport final — chantier 2 : reprise d’annale du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- Nouvel écran **Reprise d’annale**, accessible depuis chaque copie corrigée : il liste chaque question ayant perdu au moins un point, avec dossier, compétence, nature de l’erreur, réponse initiale et règle attendue.
+- Le corrigé est volontairement masqué : l’étudiant rédige d’abord un mini-exercice de rappel actif, puis révèle la règle et peut valider l’étape suivante de sa reprise.
+- Une reprise liée affiche sa position dans l’échelle (rappel actif → application guidée → mini-cas → extrait chronométré), sa prochaine date et la révision SM-2 programmée (carte libre + mini-QCM).
+- Les anciennes copies sans plan peuvent désormais créer une carte de reprise sans modifier la copie. Les prochaines corrections créent automatiquement une note, une carte et un mini-QCM pour **tout point perdu**, y compris une réponse partiellement correcte.
+- L’écran montre aussi l’évolution réelle par UE vis-à-vis de la copie précédente ; aucune « note après reprise » n’est simulée avant une nouvelle évaluation.
+- Validation : build client, lint (six avertissements Fast Refresh préexistants), `cargo fmt --check`, **59 tests Rust** (0 échec) et démarrage Vite réel sur `127.0.0.1:5174` (`HTTP 200`).
+- Aucune dépendance, migration ni suppression de données n’a été ajoutée.
+
+## Décisions à valider
+
+- Une ancienne annale n’a pas le lien de données historique vers une note d’erreur : le rapprochement se fait de manière réversible avec le titre de l’annale et l’énoncé. L’action « Programmer la reprise » reste disponible si ce rapprochement n’existe pas.
+- Les scores avant/après ne sont affichés que lorsqu’ils proviennent de deux copies réellement corrigées de la même UE. La validation d’un rappel ne prétend pas mesurer un score d’examen.
+
+## Surprises rencontrées
+
+- Le système de patch local n’a pas pu relire certains fichiers du workspace après le crash ; les modifications nécessaires ont été appliquées de façon ciblée après autorisation, puis compilées et testées.

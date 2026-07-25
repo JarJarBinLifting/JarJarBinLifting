@@ -374,10 +374,7 @@ fn complete_attempt_inner(
         .unwrap_or(serde_json::Value::Null);
     let dossiers: Vec<StoredExoDossier> = lenient_array(exercice.get("dossiers"));
 
-    for item in items
-        .iter()
-        .filter(|i| i.bareme > 0.0 && i.note < i.bareme * 0.5)
-    {
+    for item in items.iter().filter(|i| i.bareme > 0.0 && i.note < i.bareme) {
         let enonce = dossiers
             .iter()
             .find(|d| d.numero == item.dossier)
@@ -473,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn completing_an_attempt_stores_score_and_mints_error_notes_for_weak_answers() {
+    fn completing_an_attempt_makes_every_lost_point_actionable() {
         let conn = setup();
         conn.execute(
             "UPDATE annale_attempts SET answers_json = ?1 WHERE id = 1",
@@ -493,26 +490,28 @@ mod tests {
         assert_eq!(attempt.score, Some(4.0));
         assert_eq!(attempt.total, Some(8.0));
 
-        // Q1 scored 25% → error note with the real énoncé and the expected
-        // answer; Q2 scored 75% → no note.
-        let (count, title, error_type, skill, reasoning, correction): (i64, String, String, String, String, String) = conn
+        // Both the severe miss (Q1) and the partial miss (Q2) are made
+        // actionable. A point lost should never disappear from the revision plan.
+        let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*), MAX(title), MAX(error_type), MAX(skill), MAX(my_reasoning), MAX(correction)
-                 FROM error_notes WHERE source = 'annale'",
+                "SELECT COUNT(*) FROM error_notes WHERE source = 'annale'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
+
+        let (error_type, skill, reasoning): (String, String, String) = conn
+            .query_row(
+                "SELECT error_type, skill, my_reasoning FROM error_notes
+                 WHERE my_reasoning = 'I chose the simplified regime.'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
         assert_eq!(error_type, "method");
         assert_eq!(skill, "application");
         assert_eq!(reasoning, "I chose the simplified regime.");
-        assert!(
-            title.contains("Déterminer le régime de TVA"),
-            "unexpected title: {title}"
-        );
-        assert_eq!(correction, "Le régime réel normal.");
-
         // The weak answer also became a révision éclair card (via the note).
         let cards: i64 = conn
             .query_row(
@@ -521,7 +520,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(cards, 1);
+        assert_eq!(cards, 2);
 
         // The same error also has a scheduled mini-QCM. Its first option is
         // the learner's own answer and its second option is the rule to apply.
@@ -533,7 +532,7 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
-        assert_eq!(quiz_count, 1);
+        assert_eq!(quiz_count, 2);
         assert_eq!(correct, 1);
         assert!(options_json.contains("simplified regime"));
         assert!(explanation.contains("Le régime réel normal."));
