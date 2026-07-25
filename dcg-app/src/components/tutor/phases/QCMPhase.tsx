@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Qcm, QcmQuestion } from "../../../lib/types";
+import { confusionCueForQuestion, interleaveConfusionQuestions } from "../confusions";
 import { TutorSpin, Consigne } from "../shared";
 
 function feedbackForChoice(question: QcmQuestion, choice: number | undefined) {
-  if (choice === undefined) return question.explication;
+  const cue = confusionCueForQuestion(question);
+  const distinction = cue ? `\n\nÀ ne pas confondre — ${cue.notionA} / ${cue.notionB} : ${cue.distinction}` : "";
+  if (choice === undefined) return `${question.explication}${distinction}`;
   const targeted = question.option_feedbacks?.[choice];
-  if (!targeted) return question.explication;
-  return choice === question.correct
+  if (!targeted) return `${question.explication}${distinction}`;
+  const feedback = choice === question.correct
     ? targeted
     : `${targeted}\n\nLa règle à retenir : ${question.explication}`;
+  return `${feedback}${distinction}`;
 }
 
 export function QCMPhase({
@@ -35,7 +39,7 @@ export function QCMPhase({
   const [idx, setIdx] = useState(0);
   const [answered, setAnswered] = useState(false);
 
-  const qs = qcm?.questions || [];
+  const qs = useMemo(() => interleaveConfusionQuestions(qcm?.questions || []), [qcm]);
 
   useEffect(() => {
     if (qs.length) onHint(adhd ? `QCM — question ${Math.min(idx + 1, qs.length)}/${qs.length}` : `QCM — ${Object.keys(ans).length}/${qs.length} répondues`);
@@ -50,6 +54,7 @@ export function QCMPhase({
   if (adhd && !done) {
     const q = qs[idx];
     const sel = ans[idx];
+    const cue = confusionCueForQuestion(q);
     const pick = (oi: number) => {
       if (answered) return;
       setAns({ ...ans, [idx]: oi });
@@ -84,6 +89,7 @@ export function QCMPhase({
             <span style={{ color: "var(--t-pri)", fontFamily: "var(--font-mono)", marginRight: 6 }}>{idx + 1}.</span>
             {q.question}
           </p>
+          {cue && <div style={{ background: "var(--t-acl)", borderLeft: "3px solid var(--accent-purple)", color: "var(--text)", fontSize: 11, lineHeight: 1.45, padding: "7px 9px", margin: "-3px 0 10px" }}><strong>À ne pas confondre :</strong> {cue.notionA} / {cue.notionB}</div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {q.options.map((o, oi) => {
               let bg = "var(--card)",
@@ -175,6 +181,7 @@ export function QCMPhase({
               <span style={{ color: "var(--t-pri)", fontFamily: "var(--font-mono)", marginRight: 5 }}>{qi + 1}.</span>
               {q.question}
             </p>
+            {confusionCueForQuestion(q) && <div style={{ background: "var(--t-acl)", borderLeft: "3px solid var(--accent-purple)", color: "var(--text)", fontSize: 11, lineHeight: 1.45, padding: "7px 9px", margin: "-2px 0 9px" }}><strong>À ne pas confondre :</strong> {confusionCueForQuestion(q)?.notionA} / {confusionCueForQuestion(q)?.notionB}</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {q.options.map((o, oi) => {
                 let bg = "var(--card)",
