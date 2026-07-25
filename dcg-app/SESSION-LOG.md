@@ -359,3 +359,24 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Surprises rencontrées
 
 - Le fichier de route d’import était déjà non suivi avec du travail en cours. Son branchement est actif et entièrement testé dans le workspace, mais seul le module d’audit autonome pourra être isolé dans un commit sans absorber ce travail préexistant.
+---
+
+# Rapport final — chantier 4 : historique de calibration par UE du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- L’écran Progrès affiche maintenant, par UE, l’historique réel entre l’auto-évaluation avant QCM et le rappel démontré au QCM.
+- Chaque point montre l’estimation, le rappel obtenu et l’écart : confiance trop haute, estimation réaliste ou confiance prudente. La tendance ne dit « l’écart se réduit » qu’après au moins deux sessions comparables.
+- Le serveur ne crée aucune donnée : il lit seulement les sessions terminées qui possèdent à la fois une auto-évaluation structurée et un QCM. Les données de confiance absentes ou mal formées sont volontairement écartées.
+- Tests ajoutés : agrégation par UE, tendance calculée sur des écarts réels et exclusion des données de confiance malformées.
+- Validation : **66 tests Rust** (0 échec), `cargo fmt --check`, build serveur de production, build client et lint (six avertissements Fast Refresh préexistants).
+- Aucune dépendance, migration ou modification destructive des données existantes.
+
+## Décisions à valider
+
+- La tendance compare les deux dernières sessions de chaque UE et ne s’affiche comme amélioration que si l’écart absolu baisse d’au moins cinq points. Ce seuil est explicite et volontairement modeste ; il pourra être ajusté après plusieurs semaines de données réelles.
+- Ce signal mesure la qualité de l’auto-évaluation, pas le niveau DCG : une estimation juste peut encore révéler un rappel faible. Les deux nombres restent donc visibles.
+
+## Surprises rencontrées
+
+- Les fichiers de route, API et écran Progrès étaient déjà modifiés dans le workspace. Le branchement est actif et couvert par les builds/tests, mais ces fichiers restent hors du commit afin de préserver les changements existants.
