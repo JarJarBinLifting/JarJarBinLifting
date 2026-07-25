@@ -6,7 +6,8 @@ use axum::Json;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 
-const ANNALE_COLUMNS: &str = "a.id, a.ue_id, u.code, u.name, u.color, a.chapter_id, a.title, a.subject_text,
+const ANNALE_COLUMNS: &str =
+    "a.id, a.ue_id, u.code, u.name, u.color, a.chapter_id, a.title, a.subject_text,
     a.corrige_text, a.duration_minutes, a.exercice_json, a.answers_json, a.correction_json,
     a.score, a.total, a.status, a.started_at, a.completed_at";
 
@@ -41,7 +42,9 @@ fn get_attempt(conn: &Connection, id: i64) -> rusqlite::Result<AnnaleAttempt> {
     )
 }
 
-pub async fn list_attempts(State(state): State<AppState>) -> Result<Json<Vec<AnnaleAttempt>>, AppError> {
+pub async fn list_attempts(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<AnnaleAttempt>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {ANNALE_COLUMNS} FROM annale_attempts a JOIN ues u ON u.id = a.ue_id
@@ -64,10 +67,15 @@ pub struct StartAttemptRequest {
     pub duration_minutes: i64,
 }
 
-pub async fn start_attempt(State(state): State<AppState>, Json(body): Json<StartAttemptRequest>) -> Result<Json<AnnaleAttempt>, AppError> {
+pub async fn start_attempt(
+    State(state): State<AppState>,
+    Json(body): Json<StartAttemptRequest>,
+) -> Result<Json<AnnaleAttempt>, AppError> {
     let title = body.title.trim().to_string();
     if title.is_empty() {
-        return Err(AppError("Donne un titre à l'annale (ex. « DCG UE4 2023 — dossier 2 »)".into()));
+        return Err(AppError(
+            "Donne un titre à l'annale (ex. « DCG UE4 2023 — dossier 2 »)".into(),
+        ));
     }
     if body.subject_text.trim().is_empty() {
         return Err(AppError("Colle le texte du sujet".into()));
@@ -102,7 +110,11 @@ pub struct AttemptPatch {
     pub answers_json: Option<String>,
 }
 
-pub async fn patch_attempt(State(state): State<AppState>, Path(id): Path<i64>, Json(patch): Json<AttemptPatch>) -> Result<Json<AnnaleAttempt>, AppError> {
+pub async fn patch_attempt(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(patch): Json<AttemptPatch>,
+) -> Result<Json<AnnaleAttempt>, AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "UPDATE annale_attempts SET
@@ -118,7 +130,10 @@ pub async fn patch_attempt(State(state): State<AppState>, Path(id): Path<i64>, J
     .map_err(AppError)
 }
 
-pub async fn abandon_attempt(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn abandon_attempt(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "UPDATE annale_attempts SET status = 'abandoned', updated_at = datetime('now') WHERE id = ?1 AND status = 'in_progress'",
@@ -129,7 +144,10 @@ pub async fn abandon_attempt(State(state): State<AppState>, Path(id): Path<i64>)
     .map_err(AppError)
 }
 
-pub async fn delete_attempt(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn delete_attempt(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM annale_attempts WHERE id = ?1", params![id])?;
         Ok(())
@@ -151,6 +169,8 @@ struct StoredCorrectionItem {
     #[serde(default)]
     bareme: f64,
     #[serde(default)]
+    evaluation: String,
+    #[serde(default)]
     reponse_attendue: String,
 }
 
@@ -170,10 +190,17 @@ struct StoredExoDossier {
     questions: Vec<StoredExoQuestion>,
 }
 
-fn lenient_array<T: serde::de::DeserializeOwned + Default>(value: Option<&serde_json::Value>) -> Vec<T> {
+fn lenient_array<T: serde::de::DeserializeOwned + Default>(
+    value: Option<&serde_json::Value>,
+) -> Vec<T> {
     value
         .and_then(|v| v.as_array())
-        .map(|items| items.iter().map(|item| serde_json::from_value(item.clone()).unwrap_or_default()).collect())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| serde_json::from_value(item.clone()).unwrap_or_default())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -186,6 +213,51 @@ fn truncate_chars(s: &str, max: usize) -> String {
     }
 }
 
+/// Turns the correction's plain-language diagnosis into the controlled
+/// categories used by the error notebook. Older correction files may omit
+/// `evaluation`; in that case a method/application review is the safest
+/// default for an annale answer that earned less than half its points.
+fn error_profile_for_evaluation(evaluation: &str) -> (&'static str, &'static str) {
+    let normalized = evaluation.to_lowercase();
+    if normalized.contains("temps") || normalized.contains("chron") {
+        ("time", "time")
+    } else if normalized.contains("lecture") || normalized.contains("consigne") {
+        ("reading", "method")
+    } else if normalized.contains("calcul")
+        || normalized.contains("chiffr")
+        || normalized.contains("taux")
+    {
+        ("calculation", "technical")
+    } else if normalized.contains("connaissan")
+        || normalized.contains("dÃ©finition")
+        || normalized.contains("definition")
+        || normalized.contains("rÃ¨gle inconnue")
+        || normalized.contains("regle inconnue")
+    {
+        ("knowledge", "recall")
+    } else {
+        ("method", "application")
+    }
+}
+
+fn stored_answer_for_item(
+    raw_answers: Option<&str>,
+    dossier: i64,
+    question: i64,
+) -> Option<String> {
+    let key = format!("{dossier}-{question}");
+    raw_answers
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|answers| {
+            answers
+                .get(&key)
+                .and_then(|value| value.as_str())
+                .map(|answer| answer.trim().to_string())
+        })
+        .filter(|answer| !answer.is_empty())
+        .map(|answer| truncate_chars(&answer, 900))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CompleteAttemptRequest {
     pub correction_json: String,
@@ -194,16 +266,25 @@ pub struct CompleteAttemptRequest {
     pub elapsed_seconds: i64,
 }
 
-pub async fn complete_attempt(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<CompleteAttemptRequest>) -> Result<Json<AnnaleAttempt>, AppError> {
+pub async fn complete_attempt(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<CompleteAttemptRequest>,
+) -> Result<Json<AnnaleAttempt>, AppError> {
     with_conn(&state.db, |conn| complete_attempt_inner(conn, id, &body))
         .map(Json)
         .map_err(AppError)
 }
 
-fn complete_attempt_inner(conn: &Connection, id: i64, body: &CompleteAttemptRequest) -> rusqlite::Result<AnnaleAttempt> {
+fn complete_attempt_inner(
+    conn: &Connection,
+    id: i64,
+    body: &CompleteAttemptRequest,
+) -> rusqlite::Result<AnnaleAttempt> {
     let attempt = get_attempt(conn, id)?;
 
-    let correction: serde_json::Value = serde_json::from_str(&body.correction_json).unwrap_or(serde_json::Value::Null);
+    let correction: serde_json::Value =
+        serde_json::from_str(&body.correction_json).unwrap_or(serde_json::Value::Null);
     let items: Vec<StoredCorrectionItem> = lenient_array(correction.get("corrections"));
     let total: f64 = items.iter().map(|i| i.bareme).sum();
     let score: f64 = correction
@@ -230,7 +311,10 @@ fn complete_attempt_inner(conn: &Connection, id: i64, body: &CompleteAttemptRequ
         .unwrap_or(serde_json::Value::Null);
     let dossiers: Vec<StoredExoDossier> = lenient_array(exercice.get("dossiers"));
 
-    for item in items.iter().filter(|i| i.bareme > 0.0 && i.note < i.bareme * 0.5) {
+    for item in items
+        .iter()
+        .filter(|i| i.bareme > 0.0 && i.note < i.bareme * 0.5)
+    {
         let enonce = dossiers
             .iter()
             .find(|d| d.numero == item.dossier)
@@ -243,9 +327,10 @@ fn complete_attempt_inner(conn: &Connection, id: i64, body: &CompleteAttemptRequ
             format!("{} — {}", attempt.title, truncate_chars(enonce, 90))
         };
         let correction_text = item.reponse_attendue.trim();
+        let (error_type, skill) = error_profile_for_evaluation(&item.evaluation);
         let inserted = conn.execute(
-            "INSERT INTO error_notes (ue_id, chapter_id, title, error_type, skill, correction, source, next_review_date)
-             SELECT ?1, ?2, ?3, 'method', 'application', ?4, 'annale', date('now','localtime')
+            "INSERT INTO error_notes (ue_id, chapter_id, title, error_type, skill, my_reasoning, correction, source, next_review_date)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'annale', date('now','localtime')
              WHERE NOT EXISTS (
                  SELECT 1 FROM error_notes WHERE ue_id = ?1 AND title = ?3 AND status = 'active'
              )",
@@ -253,6 +338,9 @@ fn complete_attempt_inner(conn: &Connection, id: i64, body: &CompleteAttemptRequ
                 attempt.ue_id,
                 attempt.chapter_id,
                 title,
+                error_type,
+                skill,
+                stored_answer_for_item(attempt.answers_json.as_deref(), item.dossier, item.question),
                 if correction_text.is_empty() { None } else { Some(correction_text) },
             ],
         )?;
@@ -285,8 +373,16 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", true).unwrap();
         migrate::run(&conn).unwrap();
-        conn.execute("INSERT INTO ues (code, name) VALUES ('UE4', 'Droit fiscal')", []).unwrap();
-        conn.execute("INSERT INTO chapters (ue_id, name) VALUES (1, 'La TVA')", []).unwrap();
+        conn.execute(
+            "INSERT INTO ues (code, name) VALUES ('UE4', 'Droit fiscal')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chapters (ue_id, name) VALUES (1, 'La TVA')",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO annale_attempts (ue_id, chapter_id, title, subject_text, duration_minutes, exercice_json)
              VALUES (1, 1, 'DCG UE4 2023', 'sujet…', 60, ?1)",
@@ -303,6 +399,11 @@ mod tests {
     #[test]
     fn completing_an_attempt_stores_score_and_mints_error_notes_for_weak_answers() {
         let conn = setup();
+        conn.execute(
+            "UPDATE annale_attempts SET answers_json = ?1 WHERE id = 1",
+            params![r#"{"1-1":"I chose the simplified regime.","1-2":"20 000"}"#],
+        )
+        .unwrap();
         let body = CompleteAttemptRequest {
             correction_json: r#"{"corrections":[
                 {"dossier":1,"question":1,"note":1,"bareme":4,"evaluation":"confus","reponse_attendue":"Le régime réel normal."},
@@ -318,24 +419,41 @@ mod tests {
 
         // Q1 scored 25% → error note with the real énoncé and the expected
         // answer; Q2 scored 75% → no note.
-        let (count, title, correction): (i64, String, String) = conn
+        let (count, title, error_type, skill, reasoning, correction): (i64, String, String, String, String, String) = conn
             .query_row(
-                "SELECT COUNT(*), MAX(title), MAX(correction) FROM error_notes WHERE source = 'annale'",
+                "SELECT COUNT(*), MAX(title), MAX(error_type), MAX(skill), MAX(my_reasoning), MAX(correction)
+                 FROM error_notes WHERE source = 'annale'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
             )
             .unwrap();
         assert_eq!(count, 1);
-        assert!(title.contains("Déterminer le régime de TVA"), "unexpected title: {title}");
+        assert_eq!(error_type, "method");
+        assert_eq!(skill, "application");
+        assert_eq!(reasoning, "I chose the simplified regime.");
+        assert!(
+            title.contains("Déterminer le régime de TVA"),
+            "unexpected title: {title}"
+        );
         assert_eq!(correction, "Le régime réel normal.");
 
         // The weak answer also became a révision éclair card (via the note).
-        let cards: i64 = conn.query_row("SELECT COUNT(*) FROM flashcards WHERE error_note_id IS NOT NULL", [], |r| r.get(0)).unwrap();
+        let cards: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM flashcards WHERE error_note_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(cards, 1);
 
         // And the working time was logged as a study session.
         let (sessions, secs): (i64, i64) = conn
-            .query_row("SELECT COUNT(*), MAX(duration_seconds) FROM sessions WHERE preset = 'annale'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT COUNT(*), MAX(duration_seconds) FROM sessions WHERE preset = 'annale'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!((sessions, secs), (1, 1800));
     }
@@ -350,7 +468,44 @@ mod tests {
         let attempt = complete_attempt_inner(&conn, 1, &body).unwrap();
         assert_eq!(attempt.status, "completed");
         assert_eq!(attempt.score, Some(0.0));
-        let notes: i64 = conn.query_row("SELECT COUNT(*) FROM error_notes", [], |r| r.get(0)).unwrap();
+        let notes: i64 = conn
+            .query_row("SELECT COUNT(*) FROM error_notes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(notes, 0);
+    }
+
+    #[test]
+    fn evaluation_diagnosis_maps_to_targeted_error_profiles() {
+        assert_eq!(
+            error_profile_for_evaluation("calcul errone"),
+            ("calculation", "technical")
+        );
+        assert_eq!(
+            error_profile_for_evaluation("connaissance manquante"),
+            ("knowledge", "recall")
+        );
+        assert_eq!(
+            error_profile_for_evaluation("consigne ignoree"),
+            ("reading", "method")
+        );
+        assert_eq!(
+            error_profile_for_evaluation("temps insuffisant"),
+            ("time", "time")
+        );
+        assert_eq!(
+            error_profile_for_evaluation("raisonnement confus"),
+            ("method", "application")
+        );
+    }
+
+    #[test]
+    fn finds_the_answer_written_for_the_correct_question() {
+        let answers = r#"{"1-2":"  draft answer  "}"#;
+        assert_eq!(
+            stored_answer_for_item(Some(answers), 1, 2).as_deref(),
+            Some("draft answer")
+        );
+        assert_eq!(stored_answer_for_item(Some(answers), 1, 1), None);
+        assert_eq!(stored_answer_for_item(Some("not-json"), 1, 2), None);
     }
 }
