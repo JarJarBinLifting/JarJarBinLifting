@@ -338,3 +338,24 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Surprises rencontrées
 
 - Le système de patch local n’a pas pu relire certains fichiers du workspace après le crash ; les modifications nécessaires ont été appliquées de façon ciblée après autorisation, puis compilées et testées.
+---
+
+# Rapport final — chantier 3 : contrôle serveur des leçons JSON du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- L’import serveur d’une leçon JSON vérifie désormais le rattachement déclaré au chapitre et à l’UE réellement ciblés avant de créer une nouvelle version.
+- Il bloque les contradictions structurelles : étapes incomplètes, hypothèses/feedbacks incohérents, flashcards contradictoires, QCM sans quatre options distinctes, bonne réponse non justifiée ou feedbacks invalides.
+- Les éléments pédagogiques insuffisants restent des avertissements : source absente, carte manquante pour une étape, explication courte, distracteurs peu expliqués ou exercices insuffisants. Leur nombre serveur est conservé dans la version importée, même si un client contourne l’écran habituel.
+- Le format `exercices` v5 est contrôlé côté serveur quand il est présent : format, durée, notions, consigne, corrigé, barème à deux critères minimum et piège explicité. Les anciennes leçons sans exercice restent importables avec avertissement.
+- Validation : **64 tests Rust** (0 échec), `cargo fmt --check`, build serveur de production, build client, lint (six avertissements Fast Refresh préexistants) et démarrage Vite réel (`HTTP 200`).
+- Aucune dépendance, migration ou donnée existante n’a été modifiée destructivement.
+
+## Décisions à valider
+
+- Le serveur ne prétend pas contrôler la vérité juridique ou comptable d’un LLM : il bloque les incohérences vérifiables et rend les limites pédagogiques visibles. La comparaison avec le support source reste nécessaire.
+- Le rattachement chapitre/UE est bloquant uniquement lorsqu’il est déclaré dans le JSON. Les fichiers historiques sans ces métadonnées restent utilisables, mais sont signalés.
+
+## Surprises rencontrées
+
+- Le fichier de route d’import était déjà non suivi avec du travail en cours. Son branchement est actif et entièrement testé dans le workspace, mais seul le module d’audit autonome pourra être isolé dans un commit sans absorber ce travail préexistant.
