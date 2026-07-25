@@ -292,3 +292,27 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Surprises rencontrées
 
 - Le crash système a rendu le navigateur de vérification automatisée indisponible au redémarrage. Le rendu précédent avait été inspecté avant refonte ; la version finale a été validée par build et démarrage HTTP réel. Une vérification visuelle manuelle reste à faire au prochain lancement local.
+---
+
+# Rapport final — simulations DCG à barème du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- Le prompt de leçon est passé à la version 5. Il demande 4 à 6 mini-exercices source-fidèles, de 3 à 20 minutes, de rédaction, calcul ou application, avec notions, étapes de l’histoire, consigne, barème, attendus, pièges et corrigé.
+- Le format JSON garde `exercices` optionnel : les leçons historiques restent utilisables. Un avertissement explique simplement qu’une simulation longue demande une leçon réimportée avec le prompt v5.
+- La simulation propose maintenant 12, 25 ou 45 minutes. Elle sélectionne les notions faibles, entrelace les exercices de chapitres différents, oblige à rédiger avant exposition, puis guide l’auto-correction critère par critère.
+- Chaque critère affiche ce qui était attendu et le piège séduisant à éviter. Le score est totalisé ; une réponse forte, moyenne ou faible programme la flashcard associée avec la qualité SM-2 5, 3 ou 1.
+- Le format et un exemple utilisable sont documentés dans `docs/lesson-exercises.md`.
+- Validation : lint client, build client, `cargo fmt --check`, **59 tests Rust** (0 échec), build serveur de production et démarrage réel. `/`, `/api/lessons` et `/api/tutor/concepts/progress` ont répondu `HTTP 200` sur le port isolé `4310`.
+
+## Décisions à valider
+
+- L’application ne corrige pas automatiquement une copie de rédaction : la grille rend l’auto-correction plus rigoureuse sans donner une fausse note algorithmique.
+- Si aucun exercice v5 n’est disponible sur les notions faibles, la simulation ne remplace pas cela par un cas inventé ou par un QCM. Elle demande explicitement de réimporter une leçon ; c’est la décision la plus sûre pour le contenu DCG.
+- Les fichiers déjà modifiés dans l’espace de travail (`lesson.ts` et `Dashboard.tsx`) portent les branchements de format et d’interface. Ils restent hors du commit pour ne pas absorber les changements existants, mais ils sont actifs et couverts par le build.
+
+## Ce que j’aurais fait ensuite
+
+1. Enregistrer l’historique détaillé des scores de simulation par compétence, pas seulement le rappel SM-2 associé.
+2. Ajouter une grille d’évaluation de forme (temps, structure, vérification) pour les simulations longues.
+3. Appliquer la validation de ce format d’exercice aussi côté serveur pour les futurs chemins d’import directs.
