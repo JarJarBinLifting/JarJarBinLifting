@@ -269,3 +269,26 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 - Les requêtes de planification déjà présentes classaient utilement les notions faibles ; la simulation a pu s’y raccorder sans nouvelle dépendance ni nouvelle table.
 - Le dépôt garde des modifications utilisateur non commit. Chaque commit de cette livraison isole seulement le fichier nouveau et testé correspondant à la tâche concernée.
+
+---
+
+# Rapport final — refonte de l’expérience quotidienne du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- **Accueil recentré :** l’écran « Plan du jour » met maintenant une seule action prioritaire au premier plan, avec sa durée, la raison pédagogique de sa priorité et un seul bouton de démarrage. Les étapes suivantes forment une file d’attente simple, plutôt qu’une collection de cartes équivalentes.
+- **Navigation simplifiée :** les quatre entrées visibles sont désormais « Plan du jour », « Réviser », « Progression » et « Annales ». Les imports, sauvegardes et réglages restent regroupés à leur place, dans les données et réglages.
+- **Direction plus éditoriale :** le fond neutre, les contrastes papier/ink, les séparateurs plutôt que les cartes, et la nouvelle marque « DCG » donnent davantage l’impression d’un espace de travail de préparation que d’un tableau de bord SaaS. Le mode clair devient le défaut pour une nouvelle installation ; le choix déjà enregistré de l’étudiant est conservé et reste accessible depuis la barre latérale.
+- **Cohérence de libellés :** la navigation « Réviser » mène à un écran qui porte le même vocabulaire, sans retirer l’accès au programme, au minuteur, aux simulations ou au bilan hebdomadaire.
+- Validation : lint client (six avertissements Fast Refresh préexistants), build client, build serveur de production, puis démarrage réel. `/`, `/api/tutor/concepts/progress` et `/api/annales` ont répondu `HTTP 200` sur le port isolé `4308`.
+- Aucune dépendance, migration ou donnée n’a été ajoutée ou supprimée.
+
+## Décisions à valider
+
+- L’accueil conserve volontairement les simulations, le minuteur et le bilan, mais les place sous « Autres options » et précise qu’ils suivent la priorité du jour. Le produit privilégie ainsi la décision de travail sans masquer les outils avancés.
+- Le mode clair est le défaut uniquement si aucune préférence n’est déjà stockée localement ; personne ne voit son thème existant changé à son insu.
+- Les fichiers d’intégration visuelle (`Dashboard.tsx`, `Nav.tsx`, `Programme.tsx`, `index.css`) étaient déjà modifiés dans l’espace de travail avant cette tâche. Leurs ajouts nécessaires sont actifs et validés, mais restent hors du commit pour ne pas absorber les changements existants.
+
+## Surprises rencontrées
+
+- Le crash système a rendu le navigateur de vérification automatisée indisponible au redémarrage. Le rendu précédent avait été inspecté avant refonte ; la version finale a été validée par build et démarrage HTTP réel. Une vérification visuelle manuelle reste à faire au prochain lancement local.

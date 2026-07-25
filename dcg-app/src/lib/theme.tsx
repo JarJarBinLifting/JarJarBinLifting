@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 type ThemeName = "dark" | "light";
 
 const ThemeCtx = createContext<{ theme: ThemeName; toggle: () => void }>({
-  theme: "dark",
+  theme: "light",
   toggle: () => {},
 });
 
@@ -12,7 +12,7 @@ const STORAGE_KEY = "dcg-theme"; // per-machine cosmetic preference, not synced 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ThemeName>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved === "light" || saved === "dark" ? saved : "dark";
+    return saved === "light" || saved === "dark" ? saved : "light";
   });
 
   useEffect(() => {
