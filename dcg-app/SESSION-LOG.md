@@ -184,3 +184,19 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Decisions a valider
 
 - Cette premiere version choisit les paires a comparer parmi les notions dues du meme chapitre, car le schema JSON actuel ne transporte pas encore de paires de confusion declarees. L'etape suivante sera d'ajouter un champ optionnel `confusions_frequentes` au fichier de lecon et au prompt d'import, afin de choisir les paires pedagogiquement exactes plutot que de se fier a la proximite de chapitre.
+
+---
+
+# Poursuite autonome - contrat JSON des confusions
+
+## Ce qui est fait et teste
+
+- Les questions QCM importees peuvent maintenant declarer, de facon optionnelle, une paire `confusion` avec `notion_a`, `notion_b` et `distinction`. Les fichiers existants restent valides sans ce champ.
+- Une question annotee affiche les deux notions avant la reponse, est intercalee avec les questions standards lorsqu'elles coexistent, puis ajoute la distinction cle au feedback de chaque choix. Cela rend le distracteur explicite et evite de regrouper les questions de comparaison.
+- Le format et un exemple complet sont documentes dans `docs/lesson-confusions.md` afin de pouvoir les ajouter aux prochaines lecons JSON sans changer les lecons deja importees.
+- Lint frontend, build frontend, **57 tests Rust**, build serveur et demarrage reel sont reussis. `GET /api/tutor/concepts/progress` a repondu `HTTP 200` avec 22 notions sur la base locale de verification.
+- Commit : `e9e7000 feat: support explicit lesson confusions`. Aucune dependance ni migration ajoutee.
+
+## Decisions a valider
+
+- Le format accepte aussi les alias `confusion_frequente`, `notionA`, `notionB` et `distinction_cle` lors de la lecture, pour tolerer les sorties de plusieurs LLM. Le format a produire reste volontairement le plus simple : `confusion.notion_a`, `confusion.notion_b`, `confusion.distinction`.
