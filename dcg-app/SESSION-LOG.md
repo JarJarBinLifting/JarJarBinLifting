@@ -200,3 +200,37 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 ## Decisions a valider
 
 - Le format accepte aussi les alias `confusion_frequente`, `notionA`, `notionB` et `distinction_cle` lors de la lecture, pour tolerer les sorties de plusieurs LLM. Le format a produire reste volontairement le plus simple : `confusion.notion_a`, `confusion.notion_b`, `confusion.distinction`.
+
+---
+
+# Rapport final — poursuite du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- **Import des confusions (entrelacement et feedback explicatif) :** le prompt d'import est passé à la version 4. Il exige au moins trois questions de discrimination avec le champ `confusion` (`notion_a`, `notion_b`, `distinction`). L'import valide ce format lorsqu'il est présent et avertit lorsqu'une leçon en contient moins de trois. Les fichiers plus anciens restent acceptés.
+- **Annales vers révisions ciblées :** une réponse qui obtient moins de 50 % du barème sauvegarde maintenant la réponse réellement écrite, le corrigé attendu et un diagnostic contrôlé (connaissance, méthode, calcul, lecture ou temps). Elle crée toujours une carte de révision SM-2 liée au carnet d'erreurs. Commit : `d4c61d1 feat: target annale error reviews`.
+- **Calibration confiance / rappel actif :** le bilan confronte l'estimation préalable (échelle 1–3 rendue explicite) au pourcentage réellement obtenu au QCM. Il signale une confiance réaliste, à ajuster ou prudente ; l'écart de plus de 15 points est le seuil retenu. Commit : `e23a04e feat: show confidence calibration`.
+- **Trajectoire DCG par UE :** chaque UE dispose d'une couverture, d'un score QCM mesuré, d'un statut de rythme et de la prochaine action recommandée jusqu'au 30 mai 2027. La couverture est cadencée du 1er juillet au 31 décembre 2026 pour réserver janvier à mai à la consolidation et aux annales. Commit : `5fd104d feat: plan trajectory for each UE`.
+- Tests ciblés Annales : 4 réussites. Tests Rust complets : **59 réussites, 0 échec**. Lint et build frontend réussis ; les six avertissements Fast Refresh préexistants restent non bloquants. Build du serveur de production réussi (deux avertissements préexistants sur l'ancien planificateur Leitner inutilisé).
+- Démarrage réel vérifié sur le port isolé `4305` : l'interface `/`, la configuration locale et `/api/annales` ont toutes répondu `HTTP 200`.
+- Aucune dépendance ajoutée, aucune migration ajoutée et aucune donnée existante supprimée.
+
+## Ce qui est commencé et où j'en suis
+
+- Rien n'est fonctionnellement à moitié implémenté. Les changements d'import v4 et le branchement de la trajectoire dans l'écran Programme sont actifs dans l'espace de travail courant et passent le build.
+
+## Décisions à valider
+
+- Les fichiers `lesson.ts`, `types.ts` et `Programme.tsx` faisaient partie de modifications non suivies déjà présentes. Leurs ajouts directement nécessaires (prompt v4, typage `confusion`, branchement de la trajectoire) sont volontairement restés hors des commits afin de ne pas amalgamer le travail existant. Ils sont bien présents et compilés dans l'espace de travail actuel.
+- La conversion confiance → pourcentage est volontairement transparente (1 = 33 %, 2 = 67 %, 3 = 100 %) et le seuil de calibration est de 15 points. Le conserver ou l'ajuster après quelques vraies sessions utilisateur est une décision produit à prendre avec des données réelles.
+
+## Ce que j'aurais fait ensuite
+
+1. Ajouter un petit historique de calibration par UE pour vérifier si l'écart confiance/rappel se réduit réellement.
+2. Faire apparaître la prochaine annale recommandée dans la trajectoire des UE une fois que plusieurs résultats d'annales existent.
+3. Ajouter les paires de confusion aux flashcards importées, afin que les comparaisons actives ne dépendent plus seulement des questions QCM.
+
+## Surprises rencontrées
+
+- Un premier contrôle HTTP avec `Invoke-WebRequest` a échoué à cause d'une exception PowerShell locale ; la même vérification avec `curl.exe` a confirmé les trois réponses `HTTP 200`.
+- Le dépôt contient toujours de nombreuses modifications utilisateur non commit ; chaque commit créé ici ne contient que les fichiers propres à l'amélioration concernée.
