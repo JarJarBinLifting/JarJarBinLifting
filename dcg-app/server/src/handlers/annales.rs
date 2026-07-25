@@ -258,6 +258,69 @@ fn stored_answer_for_item(
         .map(|answer| truncate_chars(&answer, 900))
 }
 
+/// A weak annale answer already yields a free-recall error card. Add a small
+/// two-choice application check as well: its distractor is the learner's own
+/// answer, so feedback can explain exactly why that tempting route lost
+/// points without inventing an unrelated legal or accounting rule.
+fn create_quiz_for_annale_error(
+    conn: &Connection,
+    chapter_id: Option<i64>,
+    title: &str,
+    skill: &str,
+    learner_answer: Option<&str>,
+    correction: &str,
+) -> rusqlite::Result<()> {
+    let Some(chapter_id) = chapter_id else {
+        return Ok(());
+    };
+    let correction = correction.trim();
+    if correction.is_empty() {
+        return Ok(());
+    }
+
+    let wrong = learner_answer
+        .map(str::trim)
+        .filter(|answer| !answer.is_empty() && !answer.eq_ignore_ascii_case(correction))
+        .map(|answer| truncate_chars(answer, 420))
+        .unwrap_or_else(|| "Une réponse qui ne justifie pas la règle et son application.".into());
+    let question = format!(
+        "Mini-exercice annale — {title}\nAvant de regarder la règle, quelle réponse répond correctement à la question ?"
+    );
+    let options = vec![format!("A) {wrong}"), format!("B) {correction}")];
+    let feedbacks = vec![
+        format!(
+            "Cette réponse reprend la piste qui a coûté des points. Elle peut sembler plausible, mais elle ne respecte pas la règle attendue : {correction}"
+        ),
+        "C'est la réponse attendue. Reformule maintenant la règle puis applique-la sans regarder ce corrigé.".into(),
+    ];
+    conn.execute(
+        "INSERT INTO quiz_items (chapter_id, question, theme, options_json, correct, explication, option_feedbacks_json, next_review_date)
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, date('now','localtime'))
+         ON CONFLICT(chapter_id, question) DO UPDATE SET
+            theme = excluded.theme,
+            options_json = excluded.options_json,
+            correct = excluded.correct,
+            explication = excluded.explication,
+            option_feedbacks_json = excluded.option_feedbacks_json,
+            box_level = 0,
+            correct_streak = 0,
+            sm2_repetitions = 0,
+            sm2_interval_days = 0,
+            sm2_ease_factor = 2.5,
+            next_review_date = date('now','localtime'),
+            updated_at = datetime('now')",
+        params![
+            chapter_id,
+            question,
+            format!("Annale · {skill}"),
+            serde_json::to_string(&options).unwrap_or_else(|_| "[]".into()),
+            format!("Règle à retenir : {correction}"),
+            serde_json::to_string(&feedbacks).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CompleteAttemptRequest {
     pub correction_json: String,
@@ -346,6 +409,19 @@ fn complete_attempt_inner(
         )?;
         if inserted == 1 {
             crate::handlers::planner::create_card_for_error_note(conn, conn.last_insert_rowid())?;
+            create_quiz_for_annale_error(
+                conn,
+                attempt.chapter_id,
+                &title,
+                skill,
+                stored_answer_for_item(
+                    attempt.answers_json.as_deref(),
+                    item.dossier,
+                    item.question,
+                )
+                .as_deref(),
+                correction_text,
+            )?;
         }
     }
 
@@ -446,6 +522,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(cards, 1);
+
+        // The same error also has a scheduled mini-QCM. Its first option is
+        // the learner's own answer and its second option is the rule to apply.
+        let (quiz_count, correct, options_json, explanation): (i64, i64, String, String) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(correct), MAX(options_json), MAX(explication)
+                 FROM quiz_items WHERE theme = 'Annale · application'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(quiz_count, 1);
+        assert_eq!(correct, 1);
+        assert!(options_json.contains("simplified regime"));
+        assert!(explanation.contains("Le régime réel normal."));
 
         // And the working time was logged as a study session.
         let (sessions, secs): (i64, i64) = conn
