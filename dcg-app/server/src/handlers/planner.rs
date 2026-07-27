@@ -298,6 +298,25 @@ pub fn set_chapter_status(
     )
 }
 
+/// Promotes a chapter out of `todo` once study work demonstrably started on it.
+///
+/// Only that one transition is inferred. `ongoing` and `done` are left alone,
+/// so a chapter the student marked finished by hand is never reopened, and
+/// deciding a chapter is done stays a human judgement — the app has no way to
+/// know it. Missing the promotion is harmless; overwriting a manual status
+/// would not be, hence the one-way rule.
+pub fn mark_chapter_started(conn: &Connection, chapter_id: i64) -> rusqlite::Result<()> {
+    let status: String = conn.query_row(
+        "SELECT status FROM chapters WHERE id = ?1",
+        params![chapter_id],
+        |r| r.get(0),
+    )?;
+    if status == "todo" {
+        set_chapter_status(conn, chapter_id, "ongoing")?;
+    }
+    Ok(())
+}
+
 pub async fn cycle_chapter_status(
     State(state): State<AppState>,
     Path(chapter_id): Path<i64>,
@@ -830,6 +849,58 @@ mod tests {
 
     fn local_date_plus(days: i64) -> String {
         (chrono::Local::now().date_naive() + chrono::Duration::days(days)).to_string()
+    }
+
+    fn chapter_status(conn: &Connection, id: i64) -> String {
+        conn.query_row(
+            "SELECT status FROM chapters WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn starting_work_promotes_a_todo_chapter_to_ongoing() {
+        let conn = setup();
+        conn.execute("INSERT INTO chapters (ue_id, name) VALUES (1, 'Ch.1')", [])
+            .unwrap();
+
+        mark_chapter_started(&conn, 1).unwrap();
+
+        assert_eq!(chapter_status(&conn, 1), "ongoing");
+        // the promotion is auditable like any manual change
+        let logged: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chapter_status_events
+                 WHERE chapter_id = 1 AND old_status = 'todo' AND new_status = 'ongoing'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(logged, 1);
+    }
+
+    #[test]
+    fn starting_work_never_reopens_a_chapter_marked_done() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO chapters (ue_id, name, status) VALUES (1, 'Ch.1', 'done')",
+            [],
+        )
+        .unwrap();
+
+        mark_chapter_started(&conn, 1).unwrap();
+
+        assert_eq!(chapter_status(&conn, 1), "done");
+        let logged: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chapter_status_events WHERE chapter_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(logged, 0, "a no-op must not write a status event");
     }
 
     #[test]

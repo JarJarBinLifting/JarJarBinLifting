@@ -99,6 +99,7 @@ pub async fn start_or_resume_tutor_session(
             params![body.chapter_id, body.input_source_type, body.adhd_mode as i64, body.difficulty, body.model, body.is_revision as i64, body.is_offline_lesson as i64, body.lesson_version_id],
         )?;
         let id = conn.last_insert_rowid();
+        crate::handlers::planner::mark_chapter_started(conn, body.chapter_id)?;
         get_tutor_session(conn, id)
     })
     .map(Json)

@@ -74,6 +74,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "source references",
         include_str!("../../migrations/0014_source_references.sql"),
     ),
+    (
+        15,
+        "chapter started backfill",
+        include_str!("../../migrations/0015_chapter_started.sql"),
+    ),
 ];
 
 pub const LATEST_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].0;
@@ -141,6 +146,46 @@ mod tests {
             )
             .unwrap();
         assert_eq!(table_exists, 1);
+    }
+
+    #[test]
+    fn chapter_backfill_promotes_only_untouched_todo_chapters_with_real_work() {
+        let conn = Connection::open_in_memory().unwrap();
+        run(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO ues (code, name) VALUES ('UE3', 'Droit social')",
+            [],
+        )
+        .unwrap();
+        // 1: studied (has a flashcard) · 2: never opened · 3: studied but the
+        // student already marked it finished by hand
+        conn.execute_batch(
+            "INSERT INTO chapters (ue_id, name, status) VALUES
+                (1, 'Ch.1', 'todo'), (1, 'Ch.2', 'todo'), (1, 'Ch.3', 'done');
+             INSERT INTO flashcards (chapter_id, question, answer) VALUES
+                (1, 'q', 'a'), (3, 'q', 'a');",
+        )
+        .unwrap();
+
+        conn.execute_batch(include_str!("../../migrations/0015_chapter_started.sql"))
+            .unwrap();
+
+        let status = |id: i64| -> String {
+            conn.query_row("SELECT status FROM chapters WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(status(1), "ongoing", "work done -> no longer 'todo'");
+        assert_eq!(status(2), "todo", "an untouched chapter stays untouched");
+        assert_eq!(status(3), "done", "a manual 'done' is never demoted");
+
+        let events: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chapter_status_events", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(events, 1, "only the real promotion is logged");
     }
 
     #[test]
