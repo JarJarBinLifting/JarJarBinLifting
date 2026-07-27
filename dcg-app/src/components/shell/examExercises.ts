@@ -1,4 +1,4 @@
-import type { ConceptProgress, FlashcardRow, LessonVersion } from "../../lib/types";
+import type { ConceptProgress, FlashcardRow, LessonVersion, SourceReference } from "../../lib/types";
 
 export type ExamExerciseFormat = "redaction" | "calcul" | "application";
 
@@ -19,6 +19,7 @@ export interface ExamExercise {
   consigne: string;
   bareme: ExamCriterion[];
   corrige: string;
+  source_ref?: SourceReference;
 }
 
 export interface ExamSimulationTask {

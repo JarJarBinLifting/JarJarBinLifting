@@ -64,7 +64,10 @@ pub fn with_conn<T>(
     f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
 ) -> Result<T, String> {
     let guard = state.0.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or(DbError::NotOpen).map_err(|e| e.to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or(DbError::NotOpen)
+        .map_err(|e| e.to_string())?;
     f(conn).map_err(|e| e.to_string())
 }
 

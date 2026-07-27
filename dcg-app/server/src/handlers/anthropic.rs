@@ -62,21 +62,36 @@ fn parse_response(payload: &Value) -> Result<AnthropicResult, String> {
         })
         .unwrap_or_default();
 
-    let input_tokens = payload.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
-    let output_tokens = payload.get("usage").and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let input_tokens = payload
+        .get("usage")
+        .and_then(|u| u.get("input_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let output_tokens = payload
+        .get("usage")
+        .and_then(|u| u.get("output_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let stop_reason = payload.get("stop_reason").and_then(|v| v.as_str());
 
     if text.trim().is_empty() && stop_reason == Some("refusal") {
         return Err("Le modèle a refusé de répondre (classificateur de sécurité Anthropic) — reformule le contenu du chapitre ou réessaie.".to_string());
     }
     if text.trim().is_empty() && stop_reason.is_some() {
-        return Err(format!("Réponse vide du modèle (raison : {}).", stop_reason.unwrap_or("inconnue")));
+        return Err(format!(
+            "Réponse vide du modèle (raison : {}).",
+            stop_reason.unwrap_or("inconnue")
+        ));
     }
     if stop_reason == Some("max_tokens") {
         tracing::warn!("Anthropic response hit max_tokens — likely truncated mid-generation");
     }
 
-    Ok(AnthropicResult { text, input_tokens, output_tokens })
+    Ok(AnthropicResult {
+        text,
+        input_tokens,
+        output_tokens,
+    })
 }
 
 /// The only place in the whole app that talks to api.anthropic.com. The key
@@ -91,7 +106,9 @@ async fn call_anthropic_inner(
     model: Option<String>,
     cache: bool,
 ) -> Result<AnthropicResult, String> {
-    let key = read_api_key().ok_or_else(|| "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string())?;
+    let key = read_api_key().ok_or_else(|| {
+        "Aucune clé API Anthropic configurée — ajoute-la dans Réglages.".to_string()
+    })?;
 
     // `thinking` must be explicitly disabled: on claude-sonnet-5 an omitted
     // `thinking` field runs *adaptive* thinking, and thinking tokens count
@@ -128,7 +145,10 @@ async fn call_anthropic_inner(
         })?;
 
     let status = resp.status();
-    let payload: Value = resp.json().await.map_err(|e| format!("Réponse Anthropic illisible : {e}"))?;
+    let payload: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Réponse Anthropic illisible : {e}"))?;
 
     if !status.is_success() {
         let msg = payload
@@ -142,15 +162,27 @@ async fn call_anthropic_inner(
     parse_response(&payload)
 }
 
-pub async fn call_anthropic(State(state): State<AppState>, Json(body): Json<CallAnthropicRequest>) -> Result<Json<AnthropicResult>, AppError> {
-    call_anthropic_inner(&state.http, body.system, body.messages, body.max_tokens, body.model, body.cache.unwrap_or(false))
-        .await
-        .map(Json)
-        .map_err(AppError)
+pub async fn call_anthropic(
+    State(state): State<AppState>,
+    Json(body): Json<CallAnthropicRequest>,
+) -> Result<Json<AnthropicResult>, AppError> {
+    call_anthropic_inner(
+        &state.http,
+        body.system,
+        body.messages,
+        body.max_tokens,
+        body.model,
+        body.cache.unwrap_or(false),
+    )
+    .await
+    .map(Json)
+    .map_err(AppError)
 }
 
 /// Used by the Settings screen's "test connection" button.
-pub async fn test_anthropic_connection(State(state): State<AppState>) -> Result<Json<bool>, AppError> {
+pub async fn test_anthropic_connection(
+    State(state): State<AppState>,
+) -> Result<Json<bool>, AppError> {
     call_anthropic_inner(
         &state.http,
         "Réponds uniquement par OK.".into(),

@@ -3,13 +3,15 @@ use crate::db::with_conn;
 use crate::handlers::planner::{row_to_qcm, set_chapter_status};
 use crate::handlers::scheduler::{self, SessionResult};
 use crate::models::{
-    CompleteTutorSessionResult, ConceptProgress, DueChapter, DueFlashcard, DueFlashcardsResponse, DueQuizItem, DueQuizResponse, FlashcardRow, ModelUsageRow, QuizAnswerResult, TutorSessionRow,
+    CompleteTutorSessionResult, ConceptProgress, DueChapter, DueFlashcard, DueFlashcardsResponse,
+    DueQuizItem, DueQuizResponse, FlashcardRow, ModelUsageRow, QuizAnswerResult, TutorSessionRow,
     WeakChapter,
 };
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
+use serde_json::Value;
 
 fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow> {
     Ok(TutorSessionRow {
@@ -33,15 +35,16 @@ fn row_to_tutor_session(row: &rusqlite::Row) -> rusqlite::Result<TutorSessionRow
         input_tokens: row.get(17)?,
         output_tokens: row.get(18)?,
         is_revision: row.get::<_, i64>(19)? != 0,
-        started_at: row.get(20)?,
-        completed_at: row.get(21)?,
+        is_offline_lesson: row.get::<_, i64>(20)? != 0,
+        started_at: row.get(21)?,
+        completed_at: row.get(22)?,
     })
 }
 
 const TUTOR_SESSION_COLUMNS: &str = "id, chapter_id, status, input_source_type, story_json, concepts_json,
     confidence_json, qcm_json, qcm_results_json, qcm_score, qcm_total,
     socratique_transcript_json, exercice_json, bilan_json, adhd_mode_used, difficulty, model, input_tokens,
-    output_tokens, is_revision, started_at, completed_at";
+    output_tokens, is_revision, is_offline_lesson, started_at, completed_at";
 
 fn get_tutor_session(conn: &Connection, id: i64) -> rusqlite::Result<TutorSessionRow> {
     conn.query_row(
@@ -59,6 +62,11 @@ pub struct StartSessionRequest {
     pub difficulty: String,
     pub model: String,
     pub is_revision: bool,
+    /// Session driven by an imported lesson file (story/flashcards/QCM
+    /// pre-generated in a claude.ai chat) — no Anthropic call is ever made.
+    #[serde(default)]
+    pub is_offline_lesson: bool,
+    pub lesson_version_id: Option<i64>,
 }
 
 /// Reuses an in-progress session for this chapter if one exists, otherwise
@@ -68,7 +76,10 @@ pub struct StartSessionRequest {
 /// lookup here is a safety net, not the primary resume mechanism. `difficulty`,
 /// `model`, and `is_revision` are only used when a new row is created; a
 /// reused row keeps whatever it was originally started with.
-pub async fn start_or_resume_tutor_session(State(state): State<AppState>, Json(body): Json<StartSessionRequest>) -> Result<Json<TutorSessionRow>, AppError> {
+pub async fn start_or_resume_tutor_session(
+    State(state): State<AppState>,
+    Json(body): Json<StartSessionRequest>,
+) -> Result<Json<TutorSessionRow>, AppError> {
     with_conn(&state.db, |conn| {
         let existing: Option<i64> = conn
             .query_row(
@@ -83,9 +94,9 @@ pub async fn start_or_resume_tutor_session(State(state): State<AppState>, Json(b
         }
 
         conn.execute(
-            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model, is_revision)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![body.chapter_id, body.input_source_type, body.adhd_mode as i64, body.difficulty, body.model, body.is_revision as i64],
+            "INSERT INTO tutor_sessions (chapter_id, input_source_type, adhd_mode_used, difficulty, model, is_revision, is_offline_lesson, lesson_version_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![body.chapter_id, body.input_source_type, body.adhd_mode as i64, body.difficulty, body.model, body.is_revision as i64, body.is_offline_lesson as i64, body.lesson_version_id],
         )?;
         let id = conn.last_insert_rowid();
         get_tutor_session(conn, id)
@@ -94,7 +105,10 @@ pub async fn start_or_resume_tutor_session(State(state): State<AppState>, Json(b
     .map_err(AppError)
 }
 
-pub async fn get_latest_completed_session(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Option<TutorSessionRow>>, AppError> {
+pub async fn get_latest_completed_session(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<Option<TutorSessionRow>>, AppError> {
     with_conn(&state.db, |conn| {
         conn.query_row(
             &format!("SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions WHERE chapter_id = ?1 AND status = 'completed' ORDER BY id DESC LIMIT 1"),
@@ -115,7 +129,10 @@ pub async fn get_latest_completed_session(State(state): State<AppState>, Path(ch
 /// gracefully (Pause is just UI state, doesn't affect this) or otherwise
 /// (crash / force-quit, which never got to call `abandon_tutor_session`).
 /// Drives the Resume/Start-fresh prompt in the tutor UI.
-pub async fn get_in_progress_session(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Option<TutorSessionRow>>, AppError> {
+pub async fn get_in_progress_session(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<Option<TutorSessionRow>>, AppError> {
     with_conn(&state.db, |conn| {
         conn.query_row(
             &format!("SELECT {TUTOR_SESSION_COLUMNS} FROM tutor_sessions WHERE chapter_id = ?1 AND status = 'in_progress' ORDER BY id DESC LIMIT 1"),
@@ -154,7 +171,11 @@ pub struct TutorSessionPatch {
     pub output_tokens: Option<i64>,
 }
 
-fn apply_tutor_session_patch(conn: &Connection, id: i64, patch: &TutorSessionPatch) -> rusqlite::Result<TutorSessionRow> {
+fn apply_tutor_session_patch(
+    conn: &Connection,
+    id: i64,
+    patch: &TutorSessionPatch,
+) -> rusqlite::Result<TutorSessionRow> {
     conn.execute(
         "UPDATE tutor_sessions SET
             story_json = COALESCE(?1, story_json),
@@ -190,13 +211,22 @@ fn apply_tutor_session_patch(conn: &Connection, id: i64, patch: &TutorSessionPat
     get_tutor_session(conn, id)
 }
 
-pub async fn save_tutor_session_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(patch): Json<TutorSessionPatch>) -> Result<Json<TutorSessionRow>, AppError> {
-    with_conn(&state.db, |conn| apply_tutor_session_patch(conn, id, &patch))
-        .map(Json)
-        .map_err(AppError)
+pub async fn save_tutor_session_progress(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(patch): Json<TutorSessionPatch>,
+) -> Result<Json<TutorSessionRow>, AppError> {
+    with_conn(&state.db, |conn| {
+        apply_tutor_session_patch(conn, id, &patch)
+    })
+    .map(Json)
+    .map_err(AppError)
 }
 
-pub async fn abandon_tutor_session(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn abandon_tutor_session(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute("UPDATE tutor_sessions SET status = 'abandoned', updated_at = datetime('now') WHERE id = ?1", params![id])?;
         Ok(())
@@ -211,21 +241,35 @@ fn row_to_flashcard(row: &rusqlite::Row) -> rusqlite::Result<FlashcardRow> {
         concept_id: row.get(2)?,
         question: row.get(3)?,
         answer: row.get(4)?,
-        box_level: row.get(5)?,
-        correct_streak: row.get(6)?,
-        mastered: row.get::<_, i64>(7)? != 0,
-        last_reviewed_at: row.get(8)?,
-        sm2_repetitions: row.get(9)?,
-        sm2_interval_days: row.get(10)?,
-        sm2_ease_factor: row.get(11)?,
+        source_ref: parse_source_reference(row.get(5)?),
+        box_level: row.get(6)?,
+        correct_streak: row.get(7)?,
+        mastered: row.get::<_, i64>(8)? != 0,
+        last_reviewed_at: row.get(9)?,
+        sm2_repetitions: row.get(10)?,
+        sm2_interval_days: row.get(11)?,
+        sm2_ease_factor: row.get(12)?,
     })
 }
 
-const FLASHCARD_COLUMNS: &str = "id, chapter_id, concept_id, question, answer, box_level, correct_streak, mastered, last_reviewed_at, sm2_repetitions, sm2_interval_days, sm2_ease_factor";
+const FLASHCARD_COLUMNS: &str = "id, chapter_id, concept_id, question, answer, source_ref, box_level, correct_streak, mastered, last_reviewed_at, sm2_repetitions, sm2_interval_days, sm2_ease_factor";
 
-pub async fn list_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
+fn parse_source_reference(raw: Option<String>) -> Option<Value> {
+    raw.and_then(|value| serde_json::from_str::<Value>(&value).ok())
+}
+
+fn source_reference_json(reference: Option<&Value>) -> Option<String> {
+    reference.and_then(|value| serde_json::to_string(value).ok())
+}
+
+pub async fn list_flashcards(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<Vec<FlashcardRow>>, AppError> {
     with_conn(&state.db, |conn| {
-        let mut stmt = conn.prepare(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"
+        ))?;
         let rows = stmt.query_map(params![chapter_id], row_to_flashcard)?;
         rows.collect()
     })
@@ -238,6 +282,8 @@ pub struct NewFlashcard {
     pub concept_id: Option<String>,
     pub question: String,
     pub answer: String,
+    #[serde(default)]
+    pub source_ref: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,7 +295,11 @@ pub struct SaveFlashcardsRequest {
 /// Persists a freshly-generated flashcard set once per chapter. Callers
 /// should check `list_flashcards` first and skip generation entirely if the
 /// chapter already has cards, so they aren't regenerated every session.
-pub async fn save_flashcards(State(state): State<AppState>, Path(chapter_id): Path<i64>, Json(body): Json<SaveFlashcardsRequest>) -> Result<Json<Vec<FlashcardRow>>, AppError> {
+pub async fn save_flashcards(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+    Json(body): Json<SaveFlashcardsRequest>,
+) -> Result<Json<Vec<FlashcardRow>>, AppError> {
     with_conn(&state.db, |conn| {
         for card in &body.cards {
             // Due today: freshly generated cards get graded moments later in
@@ -257,9 +307,9 @@ pub async fn save_flashcards(State(state): State<AppState>, Path(chapter_id): Pa
             // session is abandoned first they correctly land in tomorrow
             // morning's révision éclair deck instead of never surfacing.
             conn.execute(
-                "INSERT INTO flashcards (chapter_id, tutor_session_id, concept_id, question, answer, next_review_date)
-                 VALUES (?1, ?2, ?3, ?4, ?5, date('now','localtime'))",
-                params![chapter_id, body.tutor_session_id, card.concept_id, card.question, card.answer],
+                "INSERT INTO flashcards (chapter_id, tutor_session_id, concept_id, question, answer, source_ref, next_review_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, date('now','localtime'))",
+                params![chapter_id, body.tutor_session_id, card.concept_id, card.question, card.answer, source_reference_json(card.source_ref.as_ref())],
             )?;
         }
         let mut stmt = conn.prepare(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE chapter_id = ?1 ORDER BY id"))?;
@@ -283,11 +333,26 @@ pub struct FlashcardProgressRequest {
 /// card recirculates. One grading path for both contexts — the Mémorisation
 /// phase inside a tutor session and the standalone révision éclair deck — so
 /// they share a single per-card schedule instead of drifting apart.
-pub async fn update_flashcard_progress(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<FlashcardProgressRequest>) -> Result<Json<FlashcardRow>, AppError> {
-    let quality = match body.quality.or_else(|| body.correct.map(|correct| if correct { 4 } else { 1 })) {
+pub async fn update_flashcard_progress(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<FlashcardProgressRequest>,
+) -> Result<Json<FlashcardRow>, AppError> {
+    let quality = match body
+        .quality
+        .or_else(|| body.correct.map(|correct| if correct { 4 } else { 1 }))
+    {
         Some(quality) if (0..=5).contains(&quality) => quality,
-        Some(_) => return Err(AppError("La qualité de rappel doit être comprise entre 0 et 5.".to_string())),
-        None => return Err(AppError("Indique la qualité du rappel avant de passer à la carte suivante.".to_string())),
+        Some(_) => {
+            return Err(AppError(
+                "La qualité de rappel doit être comprise entre 0 et 5.".to_string(),
+            ))
+        }
+        None => {
+            return Err(AppError(
+                "Indique la qualité du rappel avant de passer à la carte suivante.".to_string(),
+            ))
+        }
     };
     with_conn(&state.db, |conn| grade_flashcard(conn, id, quality))
         .map(Json)
@@ -295,9 +360,13 @@ pub async fn update_flashcard_progress(State(state): State<AppState>, Path(id): 
 }
 
 fn read_exam_date(conn: &Connection) -> Option<chrono::NaiveDate> {
-    conn.query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
-        .ok()
-        .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
+    conn.query_row(
+        "SELECT value FROM app_meta WHERE key = 'exam_date'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
 }
 
 fn grade_flashcard(conn: &Connection, id: i64, quality: i64) -> rusqlite::Result<FlashcardRow> {
@@ -308,7 +377,11 @@ fn grade_flashcard(conn: &Connection, id: i64, quality: i64) -> rusqlite::Result
     )?;
     let today = chrono::Local::now().date_naive();
     let update = scheduler::next_sm2_card_schedule(
-        scheduler::Sm2CardState { repetitions, interval_days, ease_factor },
+        scheduler::Sm2CardState {
+            repetitions,
+            interval_days,
+            ease_factor,
+        },
         quality,
         today,
         read_exam_date(conn),
@@ -329,9 +402,21 @@ fn grade_flashcard(conn: &Connection, id: i64, quality: i64) -> rusqlite::Result
             last_reviewed_at = datetime('now'),
             updated_at = datetime('now')
          WHERE id = ?7",
-        params![recalled as i64, box_level, update.repetitions, update.interval_days, update.ease_factor, update.next_review_date.to_string(), id],
+        params![
+            recalled as i64,
+            box_level,
+            update.repetitions,
+            update.interval_days,
+            update.ease_factor,
+            update.next_review_date.to_string(),
+            id
+        ],
     )?;
-    conn.query_row(&format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"), params![id], row_to_flashcard)
+    conn.query_row(
+        &format!("SELECT {FLASHCARD_COLUMNS} FROM flashcards WHERE id = ?1"),
+        params![id],
+        row_to_flashcard,
+    )
 }
 
 /// Hard cap on the daily révision éclair deck: a bounded, finishable stack
@@ -346,7 +431,9 @@ const DAILY_DECK_CANDIDATE_LIMIT: i64 = DAILY_DECK_LIMIT * 4;
 /// The daily card deck: every card whose review date has arrived, weakest
 /// state first, then deliberately interleaved across chapters and notions.
 /// Costs zero LLM calls — the cards already exist.
-pub async fn list_due_flashcards(State(state): State<AppState>) -> Result<Json<DueFlashcardsResponse>, AppError> {
+pub async fn list_due_flashcards(
+    State(state): State<AppState>,
+) -> Result<Json<DueFlashcardsResponse>, AppError> {
     with_conn(&state.db, |conn| list_due_flashcards_inner(conn))
         .map(Json)
         .map_err(AppError)
@@ -359,7 +446,7 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
         |r| r.get(0),
     )?;
     let mut stmt = conn.prepare(
-        "SELECT f.id, f.chapter_id, c.name, u.code, u.color, f.concept_id, f.question, f.answer, f.box_level, f.sm2_repetitions, f.sm2_interval_days, f.sm2_ease_factor
+        "SELECT f.id, f.chapter_id, c.name, u.code, u.color, f.concept_id, f.question, f.answer, f.source_ref, f.box_level, f.sm2_repetitions, f.sm2_interval_days, f.sm2_ease_factor
          FROM flashcards f
          JOIN chapters c ON c.id = f.chapter_id
          JOIN ues u ON u.id = c.ue_id
@@ -378,20 +465,26 @@ fn list_due_flashcards_inner(conn: &Connection) -> rusqlite::Result<DueFlashcard
                 concept_id: row.get(5)?,
                 question: row.get(6)?,
                 answer: row.get(7)?,
-                box_level: row.get(8)?,
-                sm2_repetitions: row.get(9)?,
-                sm2_interval_days: row.get(10)?,
-                sm2_ease_factor: row.get(11)?,
+                source_ref: parse_source_reference(row.get(8)?),
+                box_level: row.get(9)?,
+                sm2_repetitions: row.get(10)?,
+                sm2_interval_days: row.get(11)?,
+                sm2_ease_factor: row.get(12)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(DueFlashcardsResponse { total, cards: interleave_due_cards(cards, DAILY_DECK_LIMIT as usize) })
+    Ok(DueFlashcardsResponse {
+        total,
+        cards: interleave_due_cards(cards, DAILY_DECK_LIMIT as usize),
+    })
 }
 
 /// Returns a notion-level view of memory strength. A single chapter can be
 /// secure on one concept and fragile on another, so this deliberately groups
 /// cards by their `concept_id` rather than averaging the whole lesson.
-pub async fn list_concept_progress(State(state): State<AppState>) -> Result<Json<Vec<ConceptProgress>>, AppError> {
+pub async fn list_concept_progress(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ConceptProgress>>, AppError> {
     with_conn(&state.db, |conn| list_concept_progress_inner(conn))
         .map(Json)
         .map_err(AppError)
@@ -406,6 +499,7 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
                 SUM(CASE WHEN f.next_review_date IS NOT NULL AND f.next_review_date <= date('now','localtime') THEN 1 ELSE 0 END),
                 COALESCE(AVG(f.sm2_repetitions), 0),
                 MIN(f.next_review_date),
+                MAX(f.last_reviewed_at),
                 MAX(ts.story_json)
          FROM flashcards f
          JOIN chapters c ON c.id = f.chapter_id
@@ -416,13 +510,16 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
     let mut concepts = stmt
         .query_map([], |row| {
             let concept_id: Option<String> = row.get(4)?;
-            let story_json: Option<String> = row.get(11)?;
+            let story_json: Option<String> = row.get(12)?;
             Ok(ConceptProgress {
                 chapter_id: row.get(0)?,
                 chapter_name: row.get(1)?,
                 ue_code: row.get(2)?,
                 ue_color: row.get(3)?,
-                concept_label: concept_label_from_story(concept_id.as_deref(), story_json.as_deref()),
+                concept_label: concept_label_from_story(
+                    concept_id.as_deref(),
+                    story_json.as_deref(),
+                ),
                 concept_id,
                 sample_question: row.get(5)?,
                 total_cards: row.get(6)?,
@@ -430,6 +527,7 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
                 due_cards: row.get(8)?,
                 avg_sm2_repetitions: row.get(9)?,
                 next_review_date: row.get(10)?,
+                last_exposure_at: row.get(11)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -440,7 +538,10 @@ fn list_concept_progress_inner(conn: &Connection) -> rusqlite::Result<Vec<Concep
         right
             .due_cards
             .cmp(&left.due_cards)
-            .then_with(|| (left.mastered_cards * right.total_cards).cmp(&(right.mastered_cards * left.total_cards)))
+            .then_with(|| {
+                (left.mastered_cards * right.total_cards)
+                    .cmp(&(right.mastered_cards * left.total_cards))
+            })
             .then_with(|| left.chapter_name.cmp(&right.chapter_name))
             .then_with(|| left.concept_id.cmp(&right.concept_id))
     });
@@ -478,9 +579,19 @@ fn interleave_due_cards(mut candidates: Vec<DueFlashcard>, limit: usize) -> Vec<
         let selected = if let Some(last) = deck.last() {
             candidates
                 .iter()
-                .position(|card| card.chapter_id != last.chapter_id && card.concept_id != last.concept_id)
-                .or_else(|| candidates.iter().position(|card| card.concept_id != last.concept_id))
-                .or_else(|| candidates.iter().position(|card| card.chapter_id != last.chapter_id))
+                .position(|card| {
+                    card.chapter_id != last.chapter_id && card.concept_id != last.concept_id
+                })
+                .or_else(|| {
+                    candidates
+                        .iter()
+                        .position(|card| card.concept_id != last.concept_id)
+                })
+                .or_else(|| {
+                    candidates
+                        .iter()
+                        .position(|card| card.chapter_id != last.chapter_id)
+                })
                 .unwrap_or(0)
         } else {
             0
@@ -516,14 +627,24 @@ struct StoredQcmMiss {
     correct: Option<i64>,
     #[serde(default)]
     option_feedbacks: Vec<String>,
+    #[serde(default)]
+    source_ref: Option<Value>,
 }
 
 /// A QCM miss is useful only if it comes back as a concrete future action.
 /// Keep the automatic diagnosis intentionally conservative (knowledge/recall)
 /// rather than pretending the app can infer the student's exact reasoning.
 /// The learner can add a more specific manual error note after an annale.
-fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i64, ue_id: i64, raw: Option<String>) -> rusqlite::Result<()> {
-    let Some(raw) = raw else { return Ok(()); };
+fn capture_tutor_misses(
+    conn: &Connection,
+    tutor_session_id: i64,
+    chapter_id: i64,
+    ue_id: i64,
+    raw: Option<String>,
+) -> rusqlite::Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
     // Parse element-by-element so one malformed entry (this is stored LLM
     // output) costs only itself, not every other miss in the array.
     let misses: Vec<StoredQcmMiss> = serde_json::from_str::<Vec<serde_json::Value>>(&raw)
@@ -574,18 +695,23 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
         // index) so it can be re-asked as-is later. Only structurally sound
         // entries qualify. Re-missing an already-banked question resets its
         // schedule instead of duplicating it.
-        let correct_ok = miss.correct.is_some_and(|c| c >= 0 && (c as usize) < miss.options.len());
+        let correct_ok = miss
+            .correct
+            .is_some_and(|c| c >= 0 && (c as usize) < miss.options.len());
         if miss.options.len() >= 2 && correct_ok {
             let option_feedbacks_json = if miss.option_feedbacks.len() == miss.options.len()
-                && miss.option_feedbacks.iter().all(|feedback| !feedback.trim().is_empty())
+                && miss
+                    .option_feedbacks
+                    .iter()
+                    .all(|feedback| !feedback.trim().is_empty())
             {
                 serde_json::to_string(&miss.option_feedbacks).ok()
             } else {
                 None
             };
             conn.execute(
-                "INSERT INTO quiz_items (chapter_id, tutor_session_id, question, theme, options_json, correct, explication, option_feedbacks_json, next_review_date)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, date('now','localtime'))
+                "INSERT INTO quiz_items (chapter_id, tutor_session_id, question, theme, options_json, correct, explication, option_feedbacks_json, source_ref, next_review_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, date('now','localtime'))
                  ON CONFLICT(chapter_id, question) DO UPDATE SET
                     tutor_session_id = excluded.tutor_session_id,
                     theme = excluded.theme,
@@ -593,6 +719,7 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
                     correct = excluded.correct,
                     explication = excluded.explication,
                     option_feedbacks_json = excluded.option_feedbacks_json,
+                    source_ref = excluded.source_ref,
                     box_level = 0,
                     correct_streak = 0,
                     next_review_date = date('now','localtime'),
@@ -606,6 +733,7 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
                     miss.correct.unwrap_or(0),
                     if explication.is_empty() { None } else { Some(explication) },
                     option_feedbacks_json,
+                    source_reference_json(miss.source_ref.as_ref()),
                 ],
             )?;
         }
@@ -617,7 +745,9 @@ fn capture_tutor_misses(conn: &Connection, tutor_session_id: i64, chapter_id: i6
 /// one), so the daily stack is smaller than the card deck's 20.
 const DAILY_QUIZ_LIMIT: i64 = 10;
 
-pub async fn list_due_quiz(State(state): State<AppState>) -> Result<Json<DueQuizResponse>, AppError> {
+pub async fn list_due_quiz(
+    State(state): State<AppState>,
+) -> Result<Json<DueQuizResponse>, AppError> {
     with_conn(&state.db, |conn| list_due_quiz_inner(conn))
         .map(Json)
         .map_err(AppError)
@@ -646,7 +776,7 @@ fn list_due_quiz_inner(conn: &Connection) -> rusqlite::Result<DueQuizResponse> {
         |r| r.get(0),
     )?;
     let mut stmt = conn.prepare(
-        "SELECT q.id, q.chapter_id, c.name, u.code, u.color, q.question, q.theme, q.options_json
+        "SELECT q.id, q.chapter_id, c.name, u.code, u.color, q.question, q.theme, q.options_json, q.source_ref
          FROM quiz_items q
          JOIN chapters c ON c.id = q.chapter_id
          JOIN ues u ON u.id = c.ue_id
@@ -665,6 +795,7 @@ fn list_due_quiz_inner(conn: &Connection) -> rusqlite::Result<DueQuizResponse> {
                 question: row.get(5)?,
                 theme: row.get(6)?,
                 options: parse_options(&row.get::<_, String>(7)?),
+                source_ref: parse_source_reference(row.get(8)?),
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -681,13 +812,23 @@ pub struct QuizAnswerRequest {
 /// algorithm as flashcards. A QCM success maps to quality 4: it demonstrates
 /// solid recall, but remains recognition among options rather than a fully
 /// unaided response.
-pub async fn answer_quiz_item(State(state): State<AppState>, Path(id): Path<i64>, Json(body): Json<QuizAnswerRequest>) -> Result<Json<QuizAnswerResult>, AppError> {
-    with_conn(&state.db, |conn| answer_quiz_item_inner(conn, id, body.choice))
-        .map(Json)
-        .map_err(AppError)
+pub async fn answer_quiz_item(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<QuizAnswerRequest>,
+) -> Result<Json<QuizAnswerResult>, AppError> {
+    with_conn(&state.db, |conn| {
+        answer_quiz_item_inner(conn, id, body.choice)
+    })
+    .map(Json)
+    .map_err(AppError)
 }
 
-fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::Result<QuizAnswerResult> {
+fn answer_quiz_item_inner(
+    conn: &Connection,
+    id: i64,
+    choice: i64,
+) -> rusqlite::Result<QuizAnswerResult> {
     let (correct, explication, option_feedbacks_json, current_box, repetitions, interval_days, ease_factor): (i64, Option<String>, Option<String>, i64, i64, i64, f64) = conn.query_row(
         "SELECT correct, explication, option_feedbacks_json, box_level, sm2_repetitions, sm2_interval_days, sm2_ease_factor FROM quiz_items WHERE id = ?1",
         params![id],
@@ -700,7 +841,11 @@ fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::
     let today = chrono::Local::now().date_naive();
     let quality = if was_correct { 4 } else { 1 };
     let schedule = scheduler::next_sm2_card_schedule(
-        scheduler::Sm2CardState { repetitions, interval_days, ease_factor },
+        scheduler::Sm2CardState {
+            repetitions,
+            interval_days,
+            ease_factor,
+        },
         quality,
         today,
         read_exam_date(conn),
@@ -720,7 +865,15 @@ fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::
             last_reviewed_at = datetime('now'),
             updated_at = datetime('now')
          WHERE id = ?7",
-        params![box_level, was_correct, schedule.repetitions, schedule.interval_days, schedule.ease_factor, schedule.next_review_date.to_string(), id],
+        params![
+            box_level,
+            was_correct,
+            schedule.repetitions,
+            schedule.interval_days,
+            schedule.ease_factor,
+            schedule.next_review_date.to_string(),
+            id
+        ],
     )?;
 
     Ok(QuizAnswerResult {
@@ -736,13 +889,23 @@ fn answer_quiz_item_inner(conn: &Connection, id: i64, choice: i64) -> rusqlite::
 /// The single write-back point from a finished tutor session into the
 /// planner's world: marks the session completed, logs the QCM score, updates
 /// the chapter-level Leitner schedule, and marks the chapter done.
-pub async fn complete_tutor_session(State(state): State<AppState>, Path(tutor_session_id): Path<i64>, Json(body): Json<CompleteSessionRequest>) -> Result<Json<CompleteTutorSessionResult>, AppError> {
-    with_conn(&state.db, |conn| complete_tutor_session_inner(conn, tutor_session_id, &body))
-        .map(Json)
-        .map_err(AppError)
+pub async fn complete_tutor_session(
+    State(state): State<AppState>,
+    Path(tutor_session_id): Path<i64>,
+    Json(body): Json<CompleteSessionRequest>,
+) -> Result<Json<CompleteTutorSessionResult>, AppError> {
+    with_conn(&state.db, |conn| {
+        complete_tutor_session_inner(conn, tutor_session_id, &body)
+    })
+    .map(Json)
+    .map_err(AppError)
 }
 
-fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: &CompleteSessionRequest) -> rusqlite::Result<CompleteTutorSessionResult> {
+fn complete_tutor_session_inner(
+    conn: &Connection,
+    tutor_session_id: i64,
+    body: &CompleteSessionRequest,
+) -> rusqlite::Result<CompleteTutorSessionResult> {
     let (chapter_id, qcm_score, qcm_total, qcm_results_json): (i64, Option<i64>, Option<i64>, Option<String>) = conn.query_row(
         "SELECT chapter_id, qcm_score, qcm_total, qcm_results_json FROM tutor_sessions WHERE id = ?1",
         params![tutor_session_id],
@@ -750,7 +913,11 @@ fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: 
     )?;
     let qcm_score = qcm_score.unwrap_or(0);
     let qcm_total = qcm_total.unwrap_or(0);
-    let ue_id: i64 = conn.query_row("SELECT ue_id FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
+    let ue_id: i64 = conn.query_row(
+        "SELECT ue_id FROM chapters WHERE id = ?1",
+        params![chapter_id],
+        |r| r.get(0),
+    )?;
 
     conn.execute(
         "UPDATE tutor_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
@@ -764,7 +931,13 @@ fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: 
     conn.execute(
         "INSERT INTO qcm_scores (chapter_id, tutor_session_id, date, score, total, source)
          VALUES (?1, ?2, ?3, ?4, ?5, 'tutor')",
-        params![chapter_id, tutor_session_id, today_str, qcm_score, qcm_total],
+        params![
+            chapter_id,
+            tutor_session_id,
+            today_str,
+            qcm_score,
+            qcm_total
+        ],
     )?;
     let qcm_score_id = conn.last_insert_rowid();
     let qcm_score_row = conn.query_row(
@@ -776,11 +949,19 @@ fn complete_tutor_session_inner(conn: &Connection, tutor_session_id: i64, body: 
     capture_tutor_misses(conn, tutor_session_id, chapter_id, ue_id, qcm_results_json)?;
 
     let current_box: i64 = conn
-        .query_row("SELECT box FROM review_schedule WHERE chapter_id = ?1", params![chapter_id], |r| r.get(0))
+        .query_row(
+            "SELECT box FROM review_schedule WHERE chapter_id = ?1",
+            params![chapter_id],
+            |r| r.get(0),
+        )
         .unwrap_or(1);
 
     let exam_date: Option<chrono::NaiveDate> = conn
-        .query_row("SELECT value FROM app_meta WHERE key = 'exam_date'", [], |r| r.get::<_, String>(0))
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'exam_date'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
         .ok()
         .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
@@ -826,7 +1007,10 @@ pub struct DueChaptersQuery {
 /// been through a tutor session have no `review_schedule` row and correctly
 /// don't show up here — they belong in the normal todo/ongoing chapter list,
 /// not the review agenda.
-pub async fn list_due_chapters(State(state): State<AppState>, Query(q): Query<DueChaptersQuery>) -> Result<Json<Vec<DueChapter>>, AppError> {
+pub async fn list_due_chapters(
+    State(state): State<AppState>,
+    Query(q): Query<DueChaptersQuery>,
+) -> Result<Json<Vec<DueChapter>>, AppError> {
     with_conn(&state.db, |conn| {
         let horizon = (chrono::Local::now().date_naive() + chrono::Duration::days(q.within_days)).to_string();
         let mut stmt = conn.prepare(
@@ -864,7 +1048,9 @@ pub async fn list_due_chapters(State(state): State<AppState>, Query(q): Query<Du
 /// started. Answers "what should I actually study today" in one ranked list
 /// instead of the per-UE points_forts/points_faibles free text, which has to
 /// be kept up to date by hand.
-pub async fn list_weak_chapters(State(state): State<AppState>) -> Result<Json<Vec<WeakChapter>>, AppError> {
+pub async fn list_weak_chapters(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<WeakChapter>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, u.id, u.code, u.name, u.color,
@@ -912,7 +1098,9 @@ pub async fn list_weak_chapters(State(state): State<AppState>) -> Result<Json<Ve
 /// API's own `usage` field, so they're always accurate; converting to a
 /// dollar estimate is left to the UI, which can apply current published
 /// rates rather than this command guessing at pricing that changes over time.
-pub async fn get_usage_summary(State(state): State<AppState>) -> Result<Json<Vec<ModelUsageRow>>, AppError> {
+pub async fn get_usage_summary(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ModelUsageRow>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT model, COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0)
@@ -950,9 +1138,15 @@ mod tests {
         // ON DELETE CASCADE paths under test silently don't fire.
         conn.pragma_update(None, "foreign_keys", true).unwrap();
         migrate::run(&conn).unwrap();
-        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", []).unwrap();
-        conn.execute("INSERT INTO chapters (ue_id, name) VALUES (1, 'Test chapter')", []).unwrap();
-        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO chapters (ue_id, name) VALUES (1, 'Test chapter')",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", [])
+            .unwrap();
         conn
     }
 
@@ -975,7 +1169,10 @@ mod tests {
             output_tokens: Some(50),
         };
         let after_first = apply_tutor_session_patch(&conn, 1, &first).unwrap();
-        assert_eq!(after_first.story_json.as_deref(), Some(r#"{"titre":"histoire"}"#));
+        assert_eq!(
+            after_first.story_json.as_deref(),
+            Some(r#"{"titre":"histoire"}"#)
+        );
         assert_eq!(after_first.input_tokens, 100);
 
         // A later patch that only touches qcm_json must leave story_json and
@@ -997,8 +1194,14 @@ mod tests {
             output_tokens: None,
         };
         let after_second = apply_tutor_session_patch(&conn, 1, &second).unwrap();
-        assert_eq!(after_second.story_json.as_deref(), Some(r#"{"titre":"histoire"}"#));
-        assert_eq!(after_second.qcm_json.as_deref(), Some(r#"{"questions":[]}"#));
+        assert_eq!(
+            after_second.story_json.as_deref(),
+            Some(r#"{"titre":"histoire"}"#)
+        );
+        assert_eq!(
+            after_second.qcm_json.as_deref(),
+            Some(r#"{"questions":[]}"#)
+        );
         assert_eq!(after_second.input_tokens, 100);
         assert_eq!(after_second.output_tokens, 50);
     }
@@ -1021,7 +1224,11 @@ mod tests {
             output_tokens: Some(5),
         };
         apply_tutor_session_patch(&conn, 1, &patch).unwrap();
-        let patch2 = TutorSessionPatch { input_tokens: Some(30), output_tokens: Some(12), ..no_op_patch() };
+        let patch2 = TutorSessionPatch {
+            input_tokens: Some(30),
+            output_tokens: Some(12),
+            ..no_op_patch()
+        };
         let after = apply_tutor_session_patch(&conn, 1, &patch2).unwrap();
         // Frontend sends cumulative totals, not deltas — so this should land
         // on the new value (30), not 10 + 30.
@@ -1057,7 +1264,10 @@ mod tests {
         )
         .unwrap();
 
-        let body = CompleteSessionRequest { avg_confidence: 2.5, overconfidence_count: 0 };
+        let body = CompleteSessionRequest {
+            avg_confidence: 2.5,
+            overconfidence_count: 0,
+        };
         let result = complete_tutor_session_inner(&conn, 1, &body).unwrap();
 
         assert_eq!(result.chapter.status, "done");
@@ -1067,40 +1277,67 @@ mod tests {
         // first-ever session (baseline box 1) should advance to box 2.
         assert_eq!(result.box_level, 2);
 
-        let status: String = conn.query_row("SELECT status FROM tutor_sessions WHERE id = 1", [], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tutor_sessions WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(status, "completed");
 
-        let scheduled_box: i64 = conn.query_row("SELECT box FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
+        let scheduled_box: i64 = conn
+            .query_row(
+                "SELECT box FROM review_schedule WHERE chapter_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(scheduled_box, 2);
 
         // A missed QCM question must become a concrete revision item, rather
         // than disappearing into a historical percentage once the session is
         // over. The migration's UNIQUE constraint also makes this safe if a
         // completion callback is retried.
-        let errors: i64 = conn.query_row("SELECT COUNT(*) FROM error_notes WHERE tutor_session_id = 1", [], |r| r.get(0)).unwrap();
+        let errors: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM error_notes WHERE tutor_session_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(errors, 1);
     }
 
     #[test]
     fn complete_tutor_session_is_idempotent_on_the_review_schedule_row() {
         let conn = setup();
-        let body = CompleteSessionRequest { avg_confidence: 1.0, overconfidence_count: 3 };
+        let body = CompleteSessionRequest {
+            avg_confidence: 1.0,
+            overconfidence_count: 3,
+        };
         complete_tutor_session_inner(&conn, 1, &body).unwrap();
 
         // A second tutor session for the same chapter must UPDATE the
         // existing review_schedule row (ON CONFLICT), not fail on the
         // UNIQUE(chapter_id) constraint or insert a duplicate.
-        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", [])
+            .unwrap();
         let second_id = conn.last_insert_rowid();
         let result = complete_tutor_session_inner(&conn, second_id, &body).unwrap();
         assert_eq!(result.outcome, "weak");
 
-        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM review_schedule WHERE chapter_id = 1", [], |r| r.get(0)).unwrap();
+        let rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM review_schedule WHERE chapter_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(rows, 1);
     }
 
     fn error_note_count(conn: &Connection) -> i64 {
-        conn.query_row("SELECT COUNT(*) FROM error_notes", [], |r| r.get(0)).unwrap()
+        conn.query_row("SELECT COUNT(*) FROM error_notes", [], |r| r.get(0))
+            .unwrap()
     }
 
     #[test]
@@ -1120,7 +1357,11 @@ mod tests {
         assert_eq!(error_note_count(&conn), 2);
 
         let themeless_title: String = conn
-            .query_row("SELECT title FROM error_notes WHERE title NOT LIKE '%—%'", [], |r| r.get(0))
+            .query_row(
+                "SELECT title FROM error_notes WHERE title NOT LIKE '%—%'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(themeless_title, "Définir l'amortissement");
     }
@@ -1141,18 +1382,27 @@ mod tests {
 
         // Re-missing the same notion in a later session for the same chapter
         // must not stack a near-duplicate note.
-        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", [])
+            .unwrap();
         let second_session = conn.last_insert_rowid();
         capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
         assert_eq!(error_note_count(&conn), 1);
 
         // Once the note is mastered, missing the notion again is a real
         // regression — it should come back as a fresh active note.
-        conn.execute("UPDATE error_notes SET status = 'mastered' WHERE id = 1", []).unwrap();
+        conn.execute(
+            "UPDATE error_notes SET status = 'mastered' WHERE id = 1",
+            [],
+        )
+        .unwrap();
         capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
         assert_eq!(error_note_count(&conn), 2);
         let active: i64 = conn
-            .query_row("SELECT COUNT(*) FROM error_notes WHERE status = 'active'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM error_notes WHERE status = 'active'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(active, 1);
     }
@@ -1182,7 +1432,13 @@ mod tests {
         assert_eq!(card.sm2_repetitions, 1);
         assert_eq!(card.sm2_interval_days, 1);
         assert_eq!(card.sm2_ease_factor, 2.5);
-        let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        let due: String = conn
+            .query_row(
+                "SELECT next_review_date FROM flashcards WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(due, local_date_plus(1));
     }
 
@@ -1190,7 +1446,11 @@ mod tests {
     fn missing_a_card_resets_it_to_box_zero_due_tomorrow() {
         let conn = setup();
         let id = insert_card(&conn, "Q", 4, &local_date_plus(0));
-        conn.execute("UPDATE flashcards SET correct_streak = 3, mastered = 1 WHERE id = ?1", params![id]).unwrap();
+        conn.execute(
+            "UPDATE flashcards SET correct_streak = 3, mastered = 1 WHERE id = ?1",
+            params![id],
+        )
+        .unwrap();
 
         let card = grade_flashcard(&conn, id, 1).unwrap();
         assert_eq!(card.box_level, 0);
@@ -1198,7 +1458,13 @@ mod tests {
         assert!(!card.mastered);
         assert_eq!(card.sm2_repetitions, 0);
         assert_eq!(card.sm2_interval_days, 1);
-        let due: String = conn.query_row("SELECT next_review_date FROM flashcards WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+        let due: String = conn
+            .query_row(
+                "SELECT next_review_date FROM flashcards WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(due, local_date_plus(1));
     }
 
@@ -1232,13 +1498,20 @@ mod tests {
             concept_id: Some(concept_id.to_string()),
             question: format!("Question {id}"),
             answer: "Réponse".to_string(),
+            source_ref: None,
             box_level: 0,
             sm2_repetitions: 0,
             sm2_interval_days: 1,
             sm2_ease_factor: 2.5,
         };
         let deck = interleave_due_cards(
-            vec![card(1, 1, "A"), card(2, 1, "A"), card(3, 1, "B"), card(4, 2, "A"), card(5, 2, "B")],
+            vec![
+                card(1, 1, "A"),
+                card(2, 1, "A"),
+                card(3, 1, "B"),
+                card(4, 2, "A"),
+                card(5, 2, "B"),
+            ],
             5,
         );
         assert_eq!(deck.len(), 5);
@@ -1253,13 +1526,23 @@ mod tests {
         let first = insert_card(&conn, "Notion A — carte 1", 0, &local_date_plus(0));
         let second = insert_card(&conn, "Notion A — carte 2", 0, &local_date_plus(1));
         let third = insert_card(&conn, "Notion B — carte 1", 2, &local_date_plus(0));
-        conn.execute("UPDATE flashcards SET concept_id = 'A', mastered = 0 WHERE id IN (?1, ?2)", params![first, second]).unwrap();
+        conn.execute(
+            "UPDATE flashcards SET concept_id = 'A', mastered = 0 WHERE id IN (?1, ?2)",
+            params![first, second],
+        )
+        .unwrap();
         conn.execute("UPDATE flashcards SET concept_id = 'B', mastered = 1, sm2_repetitions = 3 WHERE id = ?1", params![third]).unwrap();
 
         let concepts = list_concept_progress_inner(&conn).unwrap();
         assert_eq!(concepts.len(), 2);
-        let a = concepts.iter().find(|concept| concept.concept_id.as_deref() == Some("A")).unwrap();
-        let b = concepts.iter().find(|concept| concept.concept_id.as_deref() == Some("B")).unwrap();
+        let a = concepts
+            .iter()
+            .find(|concept| concept.concept_id.as_deref() == Some("A"))
+            .unwrap();
+        let b = concepts
+            .iter()
+            .find(|concept| concept.concept_id.as_deref() == Some("B"))
+            .unwrap();
         assert_eq!((a.total_cards, a.mastered_cards, a.due_cards), (2, 0, 1));
         assert_eq!((b.total_cards, b.mastered_cards, b.due_cards), (1, 1, 1));
         assert!(b.avg_sm2_repetitions > a.avg_sm2_repetitions);
@@ -1267,8 +1550,12 @@ mod tests {
 
     #[test]
     fn concept_label_resolves_a_story_step_without_touching_card_data() {
-        let story = r#"{"etapes":[{"notion":"Le fait generateur"},{"notion":"La TVA deductible"}]}"#;
-        assert_eq!(concept_label_from_story(Some("2"), Some(story)).as_deref(), Some("La TVA deductible"));
+        let story =
+            r#"{"etapes":[{"notion":"Le fait generateur"},{"notion":"La TVA deductible"}]}"#;
+        assert_eq!(
+            concept_label_from_story(Some("2"), Some(story)).as_deref(),
+            Some("La TVA deductible")
+        );
         assert_eq!(concept_label_from_story(Some("0"), Some(story)), None);
         assert_eq!(concept_label_from_story(Some("2"), Some("not json")), None);
     }
@@ -1293,7 +1580,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
-        assert_eq!(answer, "Le régime réel normal s'applique au-delà des seuils.");
+        assert_eq!(
+            answer,
+            "Le régime réel normal s'applique au-delà des seuils."
+        );
         assert_eq!(box_level, 0);
     }
 
@@ -1305,20 +1595,42 @@ mod tests {
         let raw = r#"[{"question":"Quel régime ?","theme":"TVA","explication":"Réel normal.","options":["A) micro","B) simplifié","C) réel normal","D) franchise"],"correct":2}]"#;
         capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
         let (count, correct): (i64, i64) = conn
-            .query_row("SELECT COUNT(*), MAX(correct) FROM quiz_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row("SELECT COUNT(*), MAX(correct) FROM quiz_items", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!((count, correct), (1, 2));
 
         // Let the item climb, then re-miss it in a later session: the bank
         // must reset its schedule (box 0, due today), not grow a duplicate.
         conn.execute("UPDATE quiz_items SET box_level = 3, next_review_date = date('now','localtime','+8 days')", []).unwrap();
-        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", []).unwrap();
+        conn.execute("INSERT INTO tutor_sessions (chapter_id) VALUES (1)", [])
+            .unwrap();
         let second_session = conn.last_insert_rowid();
         capture_tutor_misses(&conn, second_session, 1, 1, Some(raw.to_string())).unwrap();
         let (count, box_level): (i64, i64) = conn
-            .query_row("SELECT COUNT(*), MAX(box_level) FROM quiz_items", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row("SELECT COUNT(*), MAX(box_level) FROM quiz_items", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!((count, box_level), (1, 0));
+    }
+
+    #[test]
+    fn quiz_bank_keeps_the_declared_source_excerpt() {
+        let conn = setup();
+        let raw = r#"[{"question":"Quelle regle ?","theme":"TVA","explication":"La regle attendue.","options":["A","B","C","D"],"correct":2,"source_ref":{"section":"2.1","extrait":"Le regime reel normal s'applique lorsque les conditions du support sont reunies."}}]"#;
+        capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
+
+        let deck = list_due_quiz_inner(&conn).unwrap();
+        assert_eq!(deck.items.len(), 1);
+        assert_eq!(
+            deck.items[0].source_ref,
+            Some(serde_json::json!({
+                "section": "2.1",
+                "extrait": "Le regime reel normal s'applique lorsque les conditions du support sont reunies."
+            }))
+        );
     }
 
     #[test]
@@ -1326,12 +1638,20 @@ mod tests {
         let conn = setup();
         let raw = r#"[{"question":"Quel regime ?","theme":"TVA","explication":"Le reel normal est requis.","options":["A) micro","B) simplifie","C) reel normal"],"correct":2,"option_feedbacks":["Le micro semble simple, mais le seuil est depasse.","Le simplifie est proche, mais ses conditions ne sont pas reunies.","C'est la bonne qualification."]}]"#;
         capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
-        let id: i64 = conn.query_row("SELECT id FROM quiz_items", [], |row| row.get(0)).unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM quiz_items", [], |row| row.get(0))
+            .unwrap();
 
         let result = answer_quiz_item_inner(&conn, id, 1).unwrap();
         assert!(!result.was_correct);
-        assert_eq!(result.choice_feedback.as_deref(), Some("Le simplifie est proche, mais ses conditions ne sont pas reunies."));
-        assert_eq!(result.explication.as_deref(), Some("Le reel normal est requis."));
+        assert_eq!(
+            result.choice_feedback.as_deref(),
+            Some("Le simplifie est proche, mais ses conditions ne sont pas reunies.")
+        );
+        assert_eq!(
+            result.explication.as_deref(),
+            Some("Le reel normal est requis.")
+        );
     }
 
     #[test]
@@ -1344,7 +1664,9 @@ mod tests {
             {"question": "Index hors limites", "options": ["A","B"], "correct": 5}
         ]"#;
         capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM quiz_items", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM quiz_items", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
         // They still became error notes — the notebook is more lenient than
         // the quiz bank on purpose.
@@ -1388,11 +1710,15 @@ mod tests {
         let raw = r#"[{"question": "Q ratée", "theme": "TVA", "explication": "La bonne règle."}]"#;
         capture_tutor_misses(&conn, 1, 1, 1, Some(raw.to_string())).unwrap();
 
-        let before: i64 = conn.query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0)).unwrap();
+        let before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(before, 2);
 
         conn.execute("DELETE FROM error_notes", []).unwrap();
-        let after: i64 = conn.query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0)).unwrap();
+        let after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM flashcards", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(after, 1);
     }
 }

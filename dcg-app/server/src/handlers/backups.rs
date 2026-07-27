@@ -33,7 +33,9 @@ fn snapshot_live_db(state: &AppState, prefix: &str) -> Result<PathBuf, String> {
     let dest = dir.join(format!("{prefix}{ts}.sqlite3"));
 
     let guard = state.db.0.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or_else(|| "Aucune base de données ouverte".to_string())?;
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Aucune base de données ouverte".to_string())?;
     let mut dst = Connection::open(&dest).map_err(|e| e.to_string())?;
     let backup = rusqlite::backup::Backup::new(conn, &mut dst).map_err(|e| e.to_string())?;
     backup
@@ -126,7 +128,12 @@ fn describe(path: &Path) -> Option<BackupInfo> {
     } else {
         stem.to_string()
     };
-    Some(BackupInfo { file_name, size_bytes, created_label, is_safety })
+    Some(BackupInfo {
+        file_name,
+        size_bytes,
+        created_label,
+        is_safety,
+    })
 }
 
 pub async fn list_backups() -> Result<Json<Vec<BackupInfo>>, AppError> {
@@ -158,8 +165,15 @@ fn validate_candidate(path: &Path) -> Result<(), String> {
         return Err("La base de données est endommagée (integrity_check a échoué)".to_string());
     }
     let version: i64 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM _migrations", [], |r| r.get(0))
-        .map_err(|_| "Ce fichier ne ressemble pas à une sauvegarde DCG Étude (table _migrations absente)".to_string())?;
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM _migrations",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| {
+            "Ce fichier ne ressemble pas à une sauvegarde DCG Étude (table _migrations absente)"
+                .to_string()
+        })?;
     if version > crate::db::migrate::LATEST_VERSION {
         return Err(format!(
             "Cette sauvegarde vient d'une version plus récente de l'application (migration {version} > {}) — mets d'abord l'application à jour.",
@@ -192,12 +206,14 @@ fn restore_from_file(state: &AppState, candidate: &Path) -> Result<(), String> {
         // ("dcg.sqlite3-wal"), not by swapping the extension.
         let wal = PathBuf::from(format!("{}-wal", db_path.display()));
         let shm = PathBuf::from(format!("{}-shm", db_path.display()));
-        let swap = std::fs::copy(candidate, &db_path).map_err(|e| e.to_string()).map(|_| {
-            // Stale WAL sidecars belong to the old database — with them gone,
-            // the restored file opens clean.
-            let _ = std::fs::remove_file(&wal);
-            let _ = std::fs::remove_file(&shm);
-        });
+        let swap = std::fs::copy(candidate, &db_path)
+            .map_err(|e| e.to_string())
+            .map(|_| {
+                // Stale WAL sidecars belong to the old database — with them gone,
+                // the restored file opens clean.
+                let _ = std::fs::remove_file(&wal);
+                let _ = std::fs::remove_file(&shm);
+            });
 
         let reopened = swap.and_then(|_| db::open(&db_path).map_err(|e| e.to_string()));
         match reopened {
@@ -230,10 +246,17 @@ pub struct RestoreRequest {
     pub file_name: String,
 }
 
-pub async fn restore_backup(State(state): State<AppState>, Json(body): Json<RestoreRequest>) -> Result<(), AppError> {
+pub async fn restore_backup(
+    State(state): State<AppState>,
+    Json(body): Json<RestoreRequest>,
+) -> Result<(), AppError> {
     // The name must be one of ours — no path components, no traversal.
     let name = body.file_name;
-    if name.contains('/') || name.contains('\\') || !(name.starts_with(AUTO_PREFIX) || name.starts_with(SAFETY_PREFIX)) || !name.ends_with(".sqlite3") {
+    if name.contains('/')
+        || name.contains('\\')
+        || !(name.starts_with(AUTO_PREFIX) || name.starts_with(SAFETY_PREFIX))
+        || !name.ends_with(".sqlite3")
+    {
         return Err(AppError("Nom de sauvegarde invalide".into()));
     }
     let path = backups_dir().map_err(AppError)?.join(&name);
@@ -250,8 +273,11 @@ pub async fn restore_upload(State(state): State<AppState>, body: Bytes) -> Resul
     if body.is_empty() {
         return Err(AppError("Fichier vide".into()));
     }
-    let tmp = std::env::temp_dir().join(format!("dcg-restore-upload-{}.sqlite3", std::process::id()));
-    std::fs::write(&tmp, &body).map_err(|e| e.to_string()).map_err(AppError)?;
+    let tmp =
+        std::env::temp_dir().join(format!("dcg-restore-upload-{}.sqlite3", std::process::id()));
+    std::fs::write(&tmp, &body)
+        .map_err(|e| e.to_string())
+        .map_err(AppError)?;
     let result = restore_from_file(&state, &tmp).map_err(AppError);
     let _ = std::fs::remove_file(&tmp);
     result
@@ -285,7 +311,10 @@ mod tests {
 
         // A plain SQLite file that isn't a DCG database (no _migrations).
         let foreign = dir.join("foreign.sqlite3");
-        Connection::open(&foreign).unwrap().execute_batch("CREATE TABLE t(x)").unwrap();
+        Connection::open(&foreign)
+            .unwrap()
+            .execute_batch("CREATE TABLE t(x)")
+            .unwrap();
         let err = validate_candidate(&foreign).unwrap_err();
         assert!(err.contains("_migrations"), "unexpected: {err}");
 
@@ -299,7 +328,11 @@ mod tests {
         let path = temp_sqlite(&dir, "futur.sqlite3", true);
         {
             let conn = Connection::open(&path).unwrap();
-            conn.execute("INSERT INTO _migrations (version, description) VALUES (9999, 'du futur')", []).unwrap();
+            conn.execute(
+                "INSERT INTO _migrations (version, description) VALUES (9999, 'du futur')",
+                [],
+            )
+            .unwrap();
         }
         let err = validate_candidate(&path).unwrap_err();
         assert!(err.contains("plus récente"), "unexpected: {err}");

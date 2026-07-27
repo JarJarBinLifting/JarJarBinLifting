@@ -11,6 +11,7 @@ export function DecouvertePhase({
   ueCode,
   model,
   adhd,
+  offline,
   onDone,
   onHint,
   celebrate,
@@ -19,6 +20,10 @@ export function DecouvertePhase({
   ueCode: string;
   model: string;
   adhd: boolean;
+  /** Imported-lesson session: no live feedback calls — per-hypothesis
+   * feedback ships in the story (`feedbacks`), everything else is
+   * deterministic local text. */
+  offline: boolean;
   onDone: (confidences: ConceptConfidence[]) => void;
   onHint: (hint: string) => void;
   celebrate: (emoji: string) => void;
@@ -64,6 +69,22 @@ export function DecouvertePhase({
     const a = (txt ?? answer).trim();
     if (!a || !e) return;
     setAnswer(a);
+
+    if (offline) {
+      celebrate("");
+      // Pre-written feedback exists for hypothesis picks; a typed answer has
+      // nothing to judge it offline, so jump straight to the full concept.
+      const hypIdx = (e.hypotheses ?? []).findIndex((h) => h === a);
+      const canned = hypIdx >= 0 ? e.feedbacks?.[hypIdx] : undefined;
+      if (canned) {
+        setFeedbackText(canned);
+        setSub("feedback");
+      } else {
+        setSub("reveal");
+      }
+      return;
+    }
+
     setLoading(true);
     setSub("feedback");
     try {
@@ -78,6 +99,14 @@ export function DecouvertePhase({
 
   const submitReform = async () => {
     if (!reformText.trim() || !e) return;
+
+    if (offline) {
+      celebrate("");
+      setReformAck(`Bien ! Compare ta formulation avec la clé : « ${e.a_retenir} » — si l'idée principale y est, c'est acquis.`);
+      setSub("reform_ack");
+      return;
+    }
+
     setLoading(true);
     setSub("reform_ack");
     try {
@@ -97,8 +126,16 @@ export function DecouvertePhase({
 
   const submitRecall = async () => {
     if (!recallAns.trim()) return;
-    setLoading(true);
     const recallE = etapes[Math.max(0, step - RECALL_EVERY)];
+
+    if (offline) {
+      celebrate("");
+      setRecallFb(`Compare avec la clé : ${recallE.a_retenir}`);
+      setSub("recall_done");
+      return;
+    }
+
+    setLoading(true);
     try {
       const r = await genText(prompts.recallCheck(ueCode, recallE.notion, recallE.a_retenir), recallAns.trim(), 300, CHEAP_MODEL);
       setRecallFb(r);

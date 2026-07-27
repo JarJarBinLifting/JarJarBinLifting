@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { ConceptProgress, DueFlashcard } from "../../lib/types";
 import { Spin } from "./common";
+import { SourceExcerpt } from "../SourceExcerpt";
 
 type ReviewPlan = {
   cards: DueFlashcard[];
@@ -251,6 +252,7 @@ export function QuickReview({ cards, total, onClose }: { cards: DueFlashcard[]; 
                 >
                   {card.answer}
                 </div>
+                <SourceExcerpt reference={card.source_ref} />
                 <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, margin: "0 0 9px" }}>
                   Compare avec ta réponse, puis note honnêtement la qualité de ton rappel.
                 </p>

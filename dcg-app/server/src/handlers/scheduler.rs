@@ -56,20 +56,26 @@ pub struct ScheduleUpdate {
 /// result is never scheduled later than the exam itself — otherwise a chapter
 /// that jumps to a long interval (e.g. box 5 → 30 days) could get pushed past
 /// exam day and never come back up for review at all.
-pub fn next_schedule(current_box: i64, result: SessionResult, today: NaiveDate, exam_date: Option<NaiveDate>) -> ScheduleUpdate {
+pub fn next_schedule(
+    current_box: i64,
+    result: SessionResult,
+    today: NaiveDate,
+    exam_date: Option<NaiveDate>,
+) -> ScheduleUpdate {
     let qcm_pct = if result.qcm_total > 0 {
         result.qcm_score as f64 / result.qcm_total as f64
     } else {
         0.0
     };
 
-    let outcome = if qcm_pct >= 0.85 && result.avg_confidence >= 2.0 && result.overconfidence_count == 0 {
-        Outcome::Strong
-    } else if qcm_pct < 0.60 || result.overconfidence_count >= 2 {
-        Outcome::Weak
-    } else {
-        Outcome::Ok
-    };
+    let outcome =
+        if qcm_pct >= 0.85 && result.avg_confidence >= 2.0 && result.overconfidence_count == 0 {
+            Outcome::Strong
+        } else if qcm_pct < 0.60 || result.overconfidence_count >= 2 {
+            Outcome::Weak
+        } else {
+            Outcome::Ok
+        };
 
     let box_level = match outcome {
         Outcome::Strong => current_box + 1,
@@ -117,7 +123,12 @@ pub const CARD_INTERVALS_DAYS: [i64; 6] = [1, 2, 4, 8, 15, 30];
 /// card is never scheduled past the exam itself. Cards deliberately never
 /// leave rotation ("mastered" just means a 30-day interval) — retention
 /// decays, so the schedule shouldn't pretend it doesn't.
-pub fn next_card_schedule(current_box: i64, correct: bool, today: NaiveDate, exam_date: Option<NaiveDate>) -> (i64, NaiveDate) {
+pub fn next_card_schedule(
+    current_box: i64,
+    correct: bool,
+    today: NaiveDate,
+    exam_date: Option<NaiveDate>,
+) -> (i64, NaiveDate) {
     let box_level = if correct { current_box + 1 } else { 0 }.clamp(0, 5);
 
     let base_interval = CARD_INTERVALS_DAYS[box_level as usize];
@@ -169,7 +180,12 @@ pub const SM2_MIN_EASE_FACTOR: f64 = 1.3;
 /// repetition count; 3–5 succeeds, with a higher quality increasing ease.
 /// Near the DCG exam, the normal interval is halved inside the existing
 /// cram window and never scheduled beyond the exam date.
-pub fn next_sm2_card_schedule(state: Sm2CardState, quality: i64, today: NaiveDate, exam_date: Option<NaiveDate>) -> Sm2ScheduleUpdate {
+pub fn next_sm2_card_schedule(
+    state: Sm2CardState,
+    quality: i64,
+    today: NaiveDate,
+    exam_date: Option<NaiveDate>,
+) -> Sm2ScheduleUpdate {
     let quality = quality.clamp(0, 5);
     let ease = if state.ease_factor.is_finite() {
         state.ease_factor.max(SM2_MIN_EASE_FACTOR)
@@ -189,7 +205,9 @@ pub fn next_sm2_card_schedule(state: Sm2CardState, quality: i64, today: NaiveDat
         let interval_days = match repetitions {
             1 => 1,
             2 => 6,
-            _ => ((state.interval_days.max(1) as f64) * ease_factor).round().max(1.0) as i64,
+            _ => ((state.interval_days.max(1) as f64) * ease_factor)
+                .round()
+                .max(1.0) as i64,
         };
         (repetitions, interval_days)
     };
@@ -285,7 +303,10 @@ mod tests {
             avg_confidence: 3.0,
             overconfidence_count: 0,
         };
-        assert_eq!(next_schedule(5, strong, date(2026, 1, 1), None).box_level, 5);
+        assert_eq!(
+            next_schedule(5, strong, date(2026, 1, 1), None).box_level,
+            5
+        );
 
         let weak = SessionResult {
             qcm_score: 0,
@@ -405,7 +426,8 @@ mod tests {
     fn card_interval_halves_inside_the_cram_window_and_clamps_to_the_exam() {
         // Box 4 → 5 would be 30d, halved to 15 inside the window, but the
         // exam is 10 days out — clamp to exam day.
-        let (box_level, next) = next_card_schedule(4, true, date(2026, 1, 1), Some(date(2026, 1, 11)));
+        let (box_level, next) =
+            next_card_schedule(4, true, date(2026, 1, 1), Some(date(2026, 1, 11)));
         assert_eq!(box_level, 5);
         assert_eq!(next, date(2026, 1, 11));
 
@@ -419,7 +441,11 @@ mod tests {
     #[test]
     fn sm2_uses_the_standard_one_then_six_day_opening_intervals() {
         let first = next_sm2_card_schedule(
-            Sm2CardState { repetitions: 0, interval_days: 0, ease_factor: 2.5 },
+            Sm2CardState {
+                repetitions: 0,
+                interval_days: 0,
+                ease_factor: 2.5,
+            },
             4,
             date(2026, 1, 1),
             None,
@@ -430,7 +456,11 @@ mod tests {
         assert_eq!(first.ease_factor, 2.5);
 
         let second = next_sm2_card_schedule(
-            Sm2CardState { repetitions: first.repetitions, interval_days: first.interval_days, ease_factor: first.ease_factor },
+            Sm2CardState {
+                repetitions: first.repetitions,
+                interval_days: first.interval_days,
+                ease_factor: first.ease_factor,
+            },
             4,
             date(2026, 1, 2),
             None,
@@ -443,7 +473,11 @@ mod tests {
     #[test]
     fn sm2_quality_changes_ease_and_a_lapse_restarts_repetitions() {
         let strong = next_sm2_card_schedule(
-            Sm2CardState { repetitions: 2, interval_days: 6, ease_factor: 2.5 },
+            Sm2CardState {
+                repetitions: 2,
+                interval_days: 6,
+                ease_factor: 2.5,
+            },
             5,
             date(2026, 1, 1),
             None,
@@ -453,7 +487,11 @@ mod tests {
         assert_eq!(strong.ease_factor, 2.6);
 
         let lapse = next_sm2_card_schedule(
-            Sm2CardState { repetitions: strong.repetitions, interval_days: strong.interval_days, ease_factor: strong.ease_factor },
+            Sm2CardState {
+                repetitions: strong.repetitions,
+                interval_days: strong.interval_days,
+                ease_factor: strong.ease_factor,
+            },
             2,
             date(2026, 1, 17),
             None,
@@ -467,7 +505,11 @@ mod tests {
     #[test]
     fn sm2_respects_the_exam_cram_window_and_never_schedules_past_exam_day() {
         let update = next_sm2_card_schedule(
-            Sm2CardState { repetitions: 3, interval_days: 30, ease_factor: 2.5 },
+            Sm2CardState {
+                repetitions: 3,
+                interval_days: 30,
+                ease_factor: 2.5,
+            },
             4,
             date(2026, 1, 1),
             Some(date(2026, 1, 11)),

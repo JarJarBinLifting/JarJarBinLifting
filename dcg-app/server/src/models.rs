@@ -65,6 +65,7 @@ pub struct TutorSessionRow {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub is_revision: bool,
+    pub is_offline_lesson: bool,
     pub started_at: String,
     pub completed_at: Option<String>,
 }
@@ -76,6 +77,7 @@ pub struct FlashcardRow {
     pub concept_id: Option<String>,
     pub question: String,
     pub answer: String,
+    pub source_ref: Option<serde_json::Value>,
     pub box_level: i64,
     pub correct_streak: i64,
     pub mastered: bool,
@@ -97,6 +99,7 @@ pub struct DueFlashcard {
     pub concept_id: Option<String>,
     pub question: String,
     pub answer: String,
+    pub source_ref: Option<serde_json::Value>,
     pub box_level: i64,
     pub sm2_repetitions: i64,
     pub sm2_interval_days: i64,
@@ -129,6 +132,7 @@ pub struct ConceptProgress {
     pub due_cards: i64,
     pub avg_sm2_repetitions: f64,
     pub next_review_date: Option<String>,
+    pub last_exposure_at: Option<String>,
 }
 
 /// One question in the daily "quiz éclair": a previously-missed QCM question
@@ -145,6 +149,7 @@ pub struct DueQuizItem {
     pub question: String,
     pub theme: Option<String>,
     pub options: Vec<String>,
+    pub source_ref: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -254,6 +259,7 @@ pub struct ErrorNote {
     pub ladder_step: i64,
     pub status: String,
     pub next_review_date: String,
+    pub updated_at: String,
 }
 
 /// The latest self-assessed evidence for one exam skill in one UE. A missing

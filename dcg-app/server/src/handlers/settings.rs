@@ -11,7 +11,8 @@ const KEYRING_USER: &str = "anthropic-api-key";
 const APP_ID: &str = "com.amadou.dcgetude";
 
 fn app_config_dir() -> Result<PathBuf, String> {
-    let base = dirs::config_dir().ok_or("Impossible de localiser le dossier de configuration de l'OS")?;
+    let base =
+        dirs::config_dir().ok_or("Impossible de localiser le dossier de configuration de l'OS")?;
     Ok(base.join(APP_ID))
 }
 
@@ -74,7 +75,10 @@ pub struct LocalConfigStatus {
 pub async fn get_local_config(State(state): State<AppState>) -> Json<LocalConfigStatus> {
     let cfg = read_local_config();
     let db_open = state.db.0.lock().map(|g| g.is_some()).unwrap_or(false);
-    Json(LocalConfigStatus { db_path: cfg.db_path, db_open })
+    Json(LocalConfigStatus {
+        db_path: cfg.db_path,
+        db_open,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,7 +89,10 @@ pub struct SetDbPathRequest {
 /// Points the app at a database file (e.g. the user relocating it for their
 /// own backup purposes — say, into a personal cloud-storage folder), opens
 /// it, runs migrations, and remembers the path for next launch.
-pub async fn set_db_path(State(state): State<AppState>, Json(body): Json<SetDbPathRequest>) -> Result<(), AppError> {
+pub async fn set_db_path(
+    State(state): State<AppState>,
+    Json(body): Json<SetDbPathRequest>,
+) -> Result<(), AppError> {
     set_db_path_inner(&state, body.path).map_err(AppError)
 }
 
@@ -161,7 +168,9 @@ pub struct SaveApiKeyRequest {
     pub key: String,
 }
 
-pub async fn save_api_key(Json(body): Json<SaveApiKeyRequest>) -> Result<Json<ApiKeyStatus>, AppError> {
+pub async fn save_api_key(
+    Json(body): Json<SaveApiKeyRequest>,
+) -> Result<Json<ApiKeyStatus>, AppError> {
     let key = body.key.trim().to_string();
     if key.is_empty() {
         return Err(AppError("La clé API ne peut pas être vide".into()));
@@ -182,7 +191,9 @@ pub async fn save_api_key(Json(body): Json<SaveApiKeyRequest>) -> Result<Json<Ap
         })),
         Err(_) => {
             let path = plaintext_key_file().map_err(AppError)?;
-            std::fs::write(&path, &key).map_err(|e| e.to_string()).map_err(AppError)?;
+            std::fs::write(&path, &key)
+                .map_err(|e| e.to_string())
+                .map_err(AppError)?;
             Ok(Json(ApiKeyStatus {
                 has_key: true,
                 storage: "plaintext_fallback".into(),
@@ -199,7 +210,9 @@ pub fn read_api_key() -> Option<String> {
             return Some(pw);
         }
     }
-    plaintext_key_file().ok().and_then(|p| std::fs::read_to_string(p).ok())
+    plaintext_key_file()
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
 }
 
 pub async fn get_api_key_status() -> Json<ApiKeyStatus> {
@@ -242,10 +255,15 @@ pub async fn clear_api_key() -> Result<(), AppError> {
 /// then streams it back as a download, since a browser can't be handed an
 /// arbitrary destination path the way a native save-dialog could.
 pub async fn export_database(State(state): State<AppState>) -> Result<Response, AppError> {
-    let tmp_path = std::env::temp_dir().join(format!("dcg-export-{}.sqlite3", chrono::Local::now().format("%Y%m%dT%H%M%S%.f")));
+    let tmp_path = std::env::temp_dir().join(format!(
+        "dcg-export-{}.sqlite3",
+        chrono::Local::now().format("%Y%m%dT%H%M%S%.f")
+    ));
     {
         let guard = state.db.0.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or_else(|| "Aucune base de données ouverte".to_string())?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| "Aucune base de données ouverte".to_string())?;
         let mut dst = rusqlite::Connection::open(&tmp_path).map_err(|e| e.to_string())?;
         let backup = rusqlite::backup::Backup::new(conn, &mut dst).map_err(|e| e.to_string())?;
         backup
@@ -256,11 +274,20 @@ pub async fn export_database(State(state): State<AppState>) -> Result<Response, 
     let bytes = std::fs::read(&tmp_path).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&tmp_path);
 
-    let filename = format!("dcg-sauvegarde-{}.sqlite3", chrono::Local::now().format("%Y-%m-%d"));
+    let filename = format!(
+        "dcg-sauvegarde-{}.sqlite3",
+        chrono::Local::now().format("%Y-%m-%d")
+    );
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/x-sqlite3".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/x-sqlite3".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
         ],
         bytes,
     )

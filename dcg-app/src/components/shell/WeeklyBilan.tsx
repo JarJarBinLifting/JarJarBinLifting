@@ -93,7 +93,7 @@ export function WeeklyBilanModal({ onClose, onNavigate }: { onClose: () => void;
               {bilan.errors_stalled > 0 && (
                 <span style={{ color: "var(--accent-yellow)" }}>
                   {" "}{bilan.errors_stalled} en panne sur l'échelle depuis plus de 3 jours —{" "}
-                  <button className="text-action" onClick={() => { onNavigate("pilotage"); onClose(); }}>reprendre dans Pilotage →</button>
+                  <button className="text-action" onClick={() => { onNavigate("progress"); onClose(); }}>reprendre dans Progrès →</button>
                 </span>
               )}
             </div>
@@ -118,7 +118,7 @@ export function WeeklyBilanModal({ onClose, onNavigate }: { onClose: () => void;
               <div style={{ flex: 1, fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
                 <strong>{bilan.due_next_week}</strong> chapitre{bilan.due_next_week > 1 ? "s" : ""} à réviser dans les 7 prochains jours.
               </div>
-              <button className="primary-button" onClick={() => { onNavigate("agenda"); onClose(); }}>Voir l'agenda →</button>
+              <button className="primary-button" onClick={() => { onNavigate("dash"); onClose(); }}>Voir le plan du jour →</button>
             </div>
           </>
         )}

@@ -5,10 +5,12 @@ import { useAppState } from "../../state/AppState";
 import { formatTokens } from "../../lib/format";
 import { avgConfidence, buildSessionDigest, flashcardMasteryConfidence, overconfidentTitles } from "./analysis";
 import { genJson, genText, setUsageListener } from "./llm";
+import { composeLocalCompteRendu, type LessonFile } from "./lesson";
+import { buildConfusionFlashcards } from "./confusionFlashcards";
 import { DIFFS, bumpDiff, prompts, type Diff } from "./prompts";
 import "./tutor.css";
 
-import { InputPhase, type StartConfig } from "./phases/InputPhase";
+import { InputPhase } from "./phases/InputPhase";
 import { RevisionIntro } from "./phases/RevisionIntro";
 import { DecouvertePhase } from "./phases/DecouvertePhase";
 import { FlashcardsPhase } from "./phases/FlashcardsPhase";
@@ -58,6 +60,7 @@ function storyDigest(story: Story): string {
 interface FinalizeCtx {
   sessionId: number;
   isRevision: boolean;
+  offline: boolean;
   confidences: ConceptConfidence[];
   qcmResult: { score: number; total: number; missed: QcmQuestion[] } | null;
   exoResult: { got: number; total: number } | null;
@@ -89,7 +92,13 @@ export function TutorModal({
 
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
   const [isRevision, setIsRevision] = useState(false);
+  // Offline sessions (imported "leçon Claude" file) never call the API:
+  // story/flashcards/QCM come from the file, socratique/exercice are skipped,
+  // and the compte-rendu is composed locally.
+  const [offline, setOffline] = useState(false);
   const [reusableStory, setReusableStory] = useState<Story | null>(null);
+  const [reusableQcm, setReusableQcm] = useState<Qcm | null>(null);
+  const [reusableOffline, setReusableOffline] = useState(false);
   const [reusableCompteRendu, setReusableCompteRendu] = useState<string | null>(null);
   const [compteRenduText, setCompteRenduText] = useState<string | null>(null);
   const [inProgressSession, setInProgressSession] = useState<TutorSessionRow | null>(null);
@@ -171,6 +180,14 @@ export function TutorModal({
         const hasStory = !!lastCompleted?.story_json;
         if (lastCompleted?.story_json) {
           setReusableStory(JSON.parse(lastCompleted.story_json));
+          setReusableOffline(lastCompleted.is_offline_lesson);
+          if (lastCompleted.qcm_json) {
+            try {
+              setReusableQcm(JSON.parse(lastCompleted.qcm_json));
+            } catch {
+              /* malformed stored QCM — offline revision will surface a clear error */
+            }
+          }
           const validDiff = (DIFFS as readonly string[]).includes(lastCompleted.difficulty) ? (lastCompleted.difficulty as Diff) : DIFFS[0];
           setDiff(validDiff);
           if (lastCompleted.bilan_json) {
@@ -221,13 +238,20 @@ export function TutorModal({
       });
 
       let compteRendu: string | null = null;
-      try {
-        compteRendu = await genText(prompts.compteRendu(ueCode), digest, 500, model);
+      if (ctx.offline) {
+        // No API in an offline session — compose the next-revision note
+        // directly from the structured results instead of asking the model.
+        compteRendu = composeLocalCompteRendu({ confidences: ctx.confidences, qcmResult: ctx.qcmResult, overconfident });
         setCompteRenduText(compteRendu);
-      } catch (e: any) {
-        // Non-fatal: the session still completes and the schedule still
-        // updates even if writing the compte-rendu itself failed.
-        setError("Compte-rendu : " + (e?.message ?? e));
+      } else {
+        try {
+          compteRendu = await genText(prompts.compteRendu(ueCode), digest, 500, model);
+          setCompteRenduText(compteRendu);
+        } catch (e: any) {
+          // Non-fatal: the session still completes and the schedule still
+          // updates even if writing the compte-rendu itself failed.
+          setError("Compte-rendu : " + (e?.message ?? e));
+        }
       }
 
       await api.saveTutorSessionProgress(ctx.sessionId, {
@@ -257,6 +281,7 @@ export function TutorModal({
       setTutorSessionId(session.id);
       setAdhd(session.adhd_mode_used);
       setIsRevision(session.is_revision);
+      setOffline(session.is_offline_lesson);
       const sessionDiff = (DIFFS as readonly string[]).includes(session.difficulty) ? (session.difficulty as Diff) : DIFFS[0];
       setDiff(sessionDiff);
       usageRef.current = { inputTokens: session.input_tokens, outputTokens: session.output_tokens };
@@ -275,6 +300,16 @@ export function TutorModal({
 
       const cards = existingFlashcards.length ? existingFlashcards : await api.listFlashcards(chapterId);
       setFlashcards(cards);
+
+      // Offline sessions persist their imported QCM at start — restore it so
+      // a resume into the flashcards stage doesn't try to regenerate one.
+      if (session.qcm_json) {
+        try {
+          setQcm(JSON.parse(session.qcm_json));
+        } catch {
+          /* malformed — the QCM stage will surface an error if still needed */
+        }
+      }
 
       let confs: ConceptConfidence[] = [];
       if (!session.is_revision) {
@@ -295,6 +330,19 @@ export function TutorModal({
       setQcmResult(qcmResultLocal);
       setFlashStats({ fails: 0, total: cards.length });
       setEffDiff(sessionDiff);
+
+      if (session.is_offline_lesson) {
+        // Offline sessions end right after the QCM — no socratique/exercice.
+        await finalizeSession({
+          sessionId: session.id,
+          isRevision: session.is_revision,
+          offline: true,
+          confidences: confs,
+          qcmResult: qcmResultLocal,
+          exoResult: null,
+        });
+        return;
+      }
 
       if (!session.socratique_transcript_json) {
         setPhase("socratique");
@@ -330,6 +378,7 @@ export function TutorModal({
       await finalizeSession({
         sessionId: session.id,
         isRevision: session.is_revision,
+        offline: false,
         confidences: confs,
         qcmResult: qcmResultLocal,
         exoResult: exoResultLocal,
@@ -358,16 +407,27 @@ export function TutorModal({
    * targeted at the prior compte-rendu, then bilan. */
   const handleStartRevision = async (adhdChoice: boolean) => {
     if (!reusableStory) return;
+    if (reusableOffline && !reusableQcm) {
+      // A lesson chapter revises against its imported QCM; without it there's
+      // nothing to grade offline. « Recommencer autrement » re-imports a file.
+      setError("Le QCM de la leçon importée est introuvable — relance le chapitre via « Recommencer autrement » en réimportant un fichier leçon.");
+      return;
+    }
     setAdhd(adhdChoice);
     setError(null);
     setIsRevision(true);
+    setOffline(reusableOffline);
     setPhase("loading");
     try {
-      const session = await api.startOrResumeTutorSession(chapterId, null, adhdChoice, diff, model, true);
+      const session = await api.startOrResumeTutorSession(chapterId, null, adhdChoice, diff, model, true, reusableOffline);
       setTutorSessionId(session.id);
       setStory(reusableStory);
       contentRef.current = storyDigest(reusableStory);
-      await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(reusableStory) });
+      if (reusableOffline && reusableQcm) setQcm(reusableQcm);
+      await api.saveTutorSessionProgress(session.id, {
+        story_json: JSON.stringify(reusableStory),
+        ...(reusableOffline && reusableQcm ? { qcm_json: JSON.stringify(reusableQcm) } : {}),
+      });
       setFlashcards(existingFlashcards);
       setPhase("flashcards");
     } catch (e: any) {
@@ -376,34 +436,49 @@ export function TutorModal({
     }
   };
 
-  const handleStart = async (cfg: StartConfig) => {
-    setDiff(cfg.diff);
-    setAdhd(cfg.adhd);
+  /** Starts a session from an imported "leçon Claude" file — the offline
+   * mirror of handleStart: story/flashcards/QCM come from the file instead of
+   * three generation calls, and everything is persisted up-front so a crash
+   * resumes without the file. */
+  const handleStartLesson = async (lesson: LessonFile, adhdChoice: boolean, lessonVersionId: number) => {
+    setDiff(lesson.difficulty);
+    setAdhd(adhdChoice);
     setError(null);
     setIsRevision(false);
+    setOffline(true);
     setPhase("loading");
-
-    const sourceType: "paste" | "pdf" | "image" | null = cfg.fileContent ? cfg.fileContent.type === "document" ? "pdf" : "image" : cfg.text ? "paste" : null;
-
     try {
-      const session = await api.startOrResumeTutorSession(chapterId, sourceType, cfg.adhd, cfg.diff, model, false);
+      const session = await api.startOrResumeTutorSession(chapterId, null, adhdChoice, lesson.difficulty, model, false, true, lessonVersionId);
       setTutorSessionId(session.id);
-
-      const content: unknown = cfg.fileContent ? [cfg.fileContent, { type: "text", text: cfg.text.trim() || "Analyse le document." }] : cfg.text;
-      contentRef.current = content;
-      const storyData = await genJson<Story>(prompts.story(ueCode), content, 16000, model);
-      setStory(storyData);
-      await api.saveTutorSessionProgress(session.id, { story_json: JSON.stringify(storyData) });
-      setPhase("decouverte");
-
+      setStory(lesson.story);
+      contentRef.current = storyDigest(lesson.story);
+      setQcm(lesson.qcm);
+      await api.saveTutorSessionProgress(session.id, {
+        story_json: JSON.stringify(lesson.story),
+        qcm_json: JSON.stringify(lesson.qcm),
+      });
+      const comparisonCards = buildConfusionFlashcards(lesson.qcm.questions);
       if (existingFlashcards.length > 0) {
-        setFlashcards(existingFlashcards);
-      } else if (contentRef.current) {
-        genJson<{ cards: { recto: string; verso: string; theme: string; etape: number }[] }>(prompts.flash(ueCode, storyData), contentRef.current, 8000, model)
-          .then((f) => api.saveFlashcards(chapterId, session.id, f.cards.map((c) => ({ concept_id: String(c.etape ?? ""), question: c.recto, answer: c.verso }))))
-          .then(setFlashcards)
-          .catch((e) => setError("Flashcards : " + (e?.message ?? e)));
+        const knownQuestions = new Set(existingFlashcards.map((card) => card.question));
+        const missingComparisons = comparisonCards.filter((card) => !knownQuestions.has(card.question));
+        if (missingComparisons.length > 0) {
+          const saved = await api.saveFlashcards(chapterId, session.id, missingComparisons);
+          setFlashcards(saved);
+        } else {
+          setFlashcards(existingFlashcards);
+        }
+      } else {
+        const saved = await api.saveFlashcards(
+          chapterId,
+          session.id,
+          [
+            ...lesson.flashcards.map((c) => ({ concept_id: String(c.etape ?? ""), question: c.recto, answer: c.verso, source_ref: c.source_ref })),
+            ...comparisonCards,
+          ],
+        );
+        setFlashcards(saved);
       }
+      setPhase("decouverte");
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setPhase("input");
@@ -438,6 +513,27 @@ export function TutorModal({
 
   const onFlashDone = async (fails: number, total: number) => {
     setFlashStats({ fails, total });
+
+    if (offline) {
+      // The QCM came with the lesson file (already in state, at its fixed
+      // difficulty) — no generation call, no adaptive bump.
+      setEffDiff(diff);
+      setQcmAdapted(false);
+      goToTransition(
+        {
+          title: "Direction : Vérification",
+          lines: [
+            `${total} flashcards maîtrisées, ${fails} passage${fails > 1 ? "s" : ""} en révision.`,
+            `Le QCM de ta leçon (${diff}) va vérifier ta compréhension.`,
+            ...(adhd ? ["Une question à la fois, feedback immédiat après chaque réponse."] : []),
+          ],
+          cta: "Lancer le QCM",
+        },
+        "qcm",
+      );
+      return;
+    }
+
     const failRate = total > 0 ? fails / total : 0;
     const adapted = failRate < 0.15 && diff !== DIFFS[DIFFS.length - 1];
     const nextDiff = adapted ? bumpDiff(diff) : diff;
@@ -480,6 +576,23 @@ export function TutorModal({
         output_tokens: usageRef.current.outputTokens,
       });
     }
+
+    if (offline) {
+      // No socratique/exercice without a live model — the session ends here.
+      // Approfondissement reste possible dans la conversation claude.ai.
+      if (tutorSessionId) {
+        await finalizeSession({
+          sessionId: tutorSessionId,
+          isRevision,
+          offline: true,
+          confidences,
+          qcmResult: { score, total, missed },
+          exoResult: null,
+        });
+      }
+      return;
+    }
+
     const weakConcepts = confidences.filter((c) => c.val === 1).map((c) => c.titre);
     const missedThemes = [...new Set(missed.map((q) => q.theme || "").filter(Boolean))];
     const targets = [...new Set([...missedThemes, ...weakConcepts])];
@@ -520,7 +633,7 @@ export function TutorModal({
     });
 
     if (isRevision) {
-      await finalizeSession({ sessionId: tutorSessionId, isRevision: true, confidences, qcmResult, exoResult: null });
+      await finalizeSession({ sessionId: tutorSessionId, isRevision: true, offline: false, confidences, qcmResult, exoResult: null });
       return;
     }
 
@@ -548,7 +661,7 @@ export function TutorModal({
       });
     }
     if (!tutorSessionId) return;
-    await finalizeSession({ sessionId: tutorSessionId, isRevision: false, confidences, qcmResult, exoResult: exoResultLocal });
+    await finalizeSession({ sessionId: tutorSessionId, isRevision: false, offline: false, confidences, qcmResult, exoResult: exoResultLocal });
   };
 
   const handleClose = async () => {
@@ -567,7 +680,12 @@ export function TutorModal({
     onClose();
   };
 
-  const stages = isRevision ? ALL_STAGES.filter((s) => s.id !== "decouverte" && s.id !== "exercice") : ALL_STAGES;
+  const stages = ALL_STAGES.filter((s) => {
+    if (isRevision && (s.id === "decouverte" || s.id === "exercice")) return false;
+    // Socratique and exercice both need a live model — offline sessions end at the QCM.
+    if (offline && (s.id === "socratique" || s.id === "exercice")) return false;
+    return true;
+  });
   const currentStageIdx = stages.findIndex((s) => s.id === phase);
 
   return (
@@ -665,7 +783,7 @@ export function TutorModal({
           />
         )}
 
-        {phase === "input" && <InputPhase chapterName={chapterName} onStart={handleStart} />}
+        {phase === "input" && <InputPhase chapterId={chapterId} chapterName={chapterName} ueCode={ueCode} onStartLesson={handleStartLesson} />}
 
         {phase === "loading" && (
           <div className="tutor-card" style={{ textAlign: "center", padding: 40 }}>
@@ -710,7 +828,7 @@ export function TutorModal({
             )}
 
             {phase === "decouverte" && story && (
-              <DecouvertePhase story={story} ueCode={ueCode} model={model} adhd={adhd} onDone={onDecouverteDone} onHint={setProgressHint} celebrate={celebrate} />
+              <DecouvertePhase story={story} ueCode={ueCode} model={model} adhd={adhd} offline={offline} onDone={onDecouverteDone} onHint={setProgressHint} celebrate={celebrate} />
             )}
 
             {phase === "flashcards" && (

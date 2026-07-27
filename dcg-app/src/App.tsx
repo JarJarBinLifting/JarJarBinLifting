@@ -5,13 +5,15 @@ import { AppStateProvider, useAppState } from "./state/AppState";
 import { Nav, type ShellView } from "./components/shell/Nav";
 import { Dashboard } from "./components/shell/Dashboard";
 import { UEDetail } from "./components/shell/UEDetail";
-import { Agenda } from "./components/shell/Agenda";
 import { Pilotage } from "./components/shell/Pilotage";
 import { Timer } from "./components/shell/Timer";
+import { Programme } from "./components/shell/Programme";
+import { Annales } from "./components/shell/Annales";
 import { SettingsScreen } from "./components/settings/SettingsScreen";
 import { TutorModal } from "./components/tutor/TutorModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { Chapter, Ue } from "./lib/types";
+import { Onboarding } from "./components/Onboarding";
 
 function MainApp() {
   const { ues, refreshAll } = useAppState();
@@ -35,12 +37,13 @@ function MainApp() {
     <div className="app-shell">
       <Nav view={view} onNavigate={navigate} />
       <main className="app-main">
-        {view === "dash" && <Dashboard onOpenUe={openUe} onNavigate={navigate} onQuickStart={(c) => setStudyingChapter(c)} />}
+        {view === "dash" && <Dashboard onNavigate={navigate} onQuickStart={(c) => setStudyingChapter(c)} />}
         {view === "ue" && selectedUe && (
           <UEDetail ue={selectedUe} onBack={() => navigate("dash")} onStudyChapter={(c) => setStudyingChapter(c)} />
         )}
-        {view === "agenda" && <Agenda onStudyChapter={(c) => setStudyingChapter(c)} />}
-        {view === "pilotage" && <Pilotage />}
+        {view === "programme" && <Programme onOpenUe={openUe} />}
+        {view === "progress" && <Pilotage />}
+        {view === "annales" && <Annales />}
         {view === "timer" && <Timer />}
         {view === "settings" && <SettingsScreen />}
       </main>
@@ -97,6 +100,7 @@ function MainApp() {
           />
         )}
       </ErrorBoundary>
+      <Onboarding />
     </div>
   );
 }

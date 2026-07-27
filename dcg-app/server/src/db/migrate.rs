@@ -4,7 +4,11 @@ use rusqlite::Connection;
 /// an already-shipped entry's SQL, since `_migrations` only records that a
 /// version number ran, not a checksum of its contents.
 const MIGRATIONS: &[(i64, &str, &str)] = &[
-    (1, "init schema", include_str!("../../migrations/0001_init.sql")),
+    (
+        1,
+        "init schema",
+        include_str!("../../migrations/0001_init.sql"),
+    ),
     (
         2,
         "tutor session difficulty",
@@ -41,6 +45,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         include_str!("../../migrations/0008_quiz_and_annales.sql"),
     ),
     (
+        9,
+        "offline lesson sessions",
+        include_str!("../../migrations/0009_offline_lesson.sql"),
+    ),
+    (
+        10,
+        "lesson library and versioning",
+        include_str!("../../migrations/0010_lesson_library.sql"),
+    ),
+    (
         11,
         "flashcard SM-2 scheduling",
         include_str!("../../migrations/0011_flashcard_sm2.sql"),
@@ -54,6 +68,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         13,
         "quiz SM-2 scheduling",
         include_str!("../../migrations/0013_quiz_sm2.sql"),
+    ),
+    (
+        14,
+        "source references",
+        include_str!("../../migrations/0014_source_references.sql"),
     ),
 ];
 
@@ -137,9 +156,21 @@ mod tests {
         .unwrap();
 
         const GAPPED_MIGRATIONS: &[(i64, &str, &str)] = &[
-            (1, "base", "CREATE TABLE migration_base (id INTEGER PRIMARY KEY);"),
-            (2, "missing", "CREATE TABLE migration_recovered (id INTEGER PRIMARY KEY);"),
-            (3, "newer", "CREATE TABLE migration_newer (id INTEGER PRIMARY KEY);"),
+            (
+                1,
+                "base",
+                "CREATE TABLE migration_base (id INTEGER PRIMARY KEY);",
+            ),
+            (
+                2,
+                "missing",
+                "CREATE TABLE migration_recovered (id INTEGER PRIMARY KEY);",
+            ),
+            (
+                3,
+                "newer",
+                "CREATE TABLE migration_newer (id INTEGER PRIMARY KEY);",
+            ),
         ];
 
         // Simulate an earlier build that applied versions 1 and 3 but did not

@@ -1,389 +1,150 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import * as api from "../../lib/api";
-import { genJson } from "../tutor/llm";
 import { useAppState } from "../../state/AppState";
 import type { AnnaleAttempt, Exercice, ExoCorrection } from "../../lib/types";
 
-/** Entraînement annale: paste a real past exam paper, work it against the
- * clock, get corrected on the barème. Two LLM calls total — one to structure
- * the pasted subject into dossiers/questions, one to correct the copy
- * (guided by the official corrigé when pasted). Weak answers land in the
- * carnet d'erreurs server-side (source « annale »). */
+type Stage = "setup" | "work" | "correction-import" | "result";
 
-type Stage = "setup" | "structuring" | "work" | "correcting" | "result";
-
-const structureSys = (ueCode: string) =>
-  `Tu structures un sujet d'annale DCG ${ueCode} en JSON, sans le résoudre.
-Réponds UNIQUEMENT en JSON pur : {"titre":"...","contexte":"...","dossiers":[{"numero":1,"titre":"...","points":8,"questions":[{"numero":1,"enonce":"...","points":2}]}],"total_points":20}
-Recopie fidèlement les énoncés des questions, sans les reformuler ni les résumer. Le contexte reprend les informations communes (documents, données chiffrées) nécessaires pour répondre. Si le barème n'est pas indiqué dans le sujet, répartis les points de façon plausible.`;
-
-const correctionSys = (ueCode: string, hasCorrige: boolean) =>
-  `Tu es correcteur du DCG ${ueCode}. Corrige la copie d'un candidat selon le barème du sujet.${
-    hasCorrige ? " Un corrigé officiel est fourni : appuie-toi dessus comme référence de correction." : ""
-  }
-Réponds UNIQUEMENT en JSON pur : {"corrections":[{"dossier":1,"question":1,"note":1.5,"bareme":2,"evaluation":"...","reponse_attendue":"..."}],"total":12.5,"appreciation":"..."}
-Note comme à l'examen : exige la règle ET son application chiffrée. Une réponse vide vaut 0. "evaluation" dit en 1-2 phrases ce qui va et ce qui manque ; "reponse_attendue" donne la réponse complète attendue.`;
-
-function fmtClock(totalSeconds: number): string {
-  const s = Math.max(0, totalSeconds);
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+function fmtClock(totalSeconds: number) {
+  const seconds = Math.max(0, totalSeconds);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** SQLite's datetime('now') is UTC without timezone marker. */
-function elapsedSecondsSince(sqliteUtc: string): number {
+function elapsedSecondsSince(sqliteUtc: string) {
   const started = new Date(sqliteUtc.replace(" ", "T") + "Z").getTime();
-  if (Number.isNaN(started)) return 0;
-  return Math.max(0, Math.floor((Date.now() - started) / 1000));
+  return Number.isNaN(started) ? 0 : Math.max(0, Math.floor((Date.now() - started) / 1000));
+}
+
+function parseJson(raw: string, label: string) {
+  try { return JSON.parse(raw); } catch { throw new Error(`${label} n'est pas un JSON valide.`); }
+}
+
+function validateExercise(raw: string): Exercice {
+  const data = parseJson(raw, "Le sujet structuré");
+  if (!data || typeof data.titre !== "string" || !Array.isArray(data.dossiers) || data.dossiers.length === 0) throw new Error("Le fichier doit contenir un titre et au moins un dossier.");
+  for (const [index, dossier] of data.dossiers.entries()) {
+    if (!Array.isArray(dossier.questions) || dossier.questions.length === 0) throw new Error(`Le dossier ${index + 1} ne contient aucune question.`);
+    for (const question of dossier.questions) if (typeof question.enonce !== "string" || typeof question.points !== "number") throw new Error(`Une question du dossier ${index + 1} n'a pas d'énoncé ou de barème valide.`);
+  }
+  return data as Exercice;
+}
+
+function validateCorrection(raw: string): ExoCorrection {
+  const data = parseJson(raw, "La correction");
+  if (!data || !Array.isArray(data.corrections) || typeof data.total !== "number") throw new Error("La correction doit contenir la liste des corrections et le total obtenu.");
+  for (const item of data.corrections) if (typeof item.note !== "number" || typeof item.bareme !== "number" || typeof item.reponse_attendue !== "string") throw new Error("Chaque correction doit contenir une note, un barème et la réponse attendue.");
+  return data as ExoCorrection;
+}
+
+function subjectPrompt(ueCode: string, title: string, subject: string) {
+  return `Tu structures un sujet d'annale DCG ${ueCode} pour une application locale, sans le résoudre.\n\nTitre : ${title}\n\nRends un fichier JSON téléchargeable nommé dcg-annale.json, sans markdown ni commentaire, avec exactement cette structure :\n{"titre":"...","contexte":"...","dossiers":[{"numero":1,"titre":"...","points":8,"questions":[{"numero":1,"enonce":"...","points":2}]}],"total_points":20}\n\nRecopie fidèlement les questions. Conserve dans le contexte toutes les données et tous les documents nécessaires. Si le barème n'est pas indiqué, répartis les points de façon plausible.\n\nSUJET :\n${subject}`;
+}
+
+function correctionPrompt(ueCode: string, exercise: Exercice, answers: Record<string, string>, officialCorrection: string | null) {
+  return `Tu corriges une copie de DCG ${ueCode} selon le barème du sujet. Rends un fichier JSON téléchargeable nommé dcg-correction.json, sans markdown ni commentaire, avec exactement cette structure :\n{"corrections":[{"dossier":1,"question":1,"note":1.5,"bareme":2,"evaluation":"...","reponse_attendue":"..."}],"total":12.5,"appreciation":"..."}\n\nExige la règle et son application. Une réponse vide vaut 0. Ne dépasse jamais le barème.\n\nSUJET STRUCTURÉ :\n${JSON.stringify(exercise)}\n\nCOPIE DU CANDIDAT :\n${JSON.stringify(answers)}${officialCorrection ? `\n\nCORRIGÉ OFFICIEL À UTILISER COMME RÉFÉRENCE :\n${officialCorrection}` : ""}`;
 }
 
 export function AnnaleModal({ resume, onClose }: { resume: AnnaleAttempt | null; onClose: () => void }) {
-  const { ues, chapters, model } = useAppState();
-  const [stage, setStage] = useState<Stage>(() => (resume ? (resume.correction_json ? "result" : "structuring") : "setup"));
+  const { ues, chapters } = useAppState();
+  const [stage, setStage] = useState<Stage>(() => resume?.correction_json ? "result" : resume?.exercice_json ? "work" : "setup");
   const [attempt, setAttempt] = useState<AnnaleAttempt | null>(resume);
-  const [exercice, setExercice] = useState<Exercice | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [correction, setCorrection] = useState<ExoCorrection | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [exercise, setExercise] = useState<Exercice | null>(() => resume?.exercice_json ? parseJson(resume.exercice_json, "Le sujet") : null);
+  const [answers, setAnswers] = useState<Record<string, string>>(() => resume?.answers_json ? parseJson(resume.answers_json, "La copie") : {});
+  const [correction, setCorrection] = useState<ExoCorrection | null>(() => resume?.correction_json ? parseJson(resume.correction_json, "La correction") : null);
+  const [error, setError] = useState("");
+  const [promptFallback, setPromptFallback] = useState("");
+  const [promptCopied, setPromptCopied] = useState(false);
   const [, tick] = useState(0);
+  const subjectFileRef = useRef<HTMLInputElement>(null);
+  const correctionFileRef = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState({ ueId: ues[0]?.id ?? 0, chapterId: 0, title: "", subject: "", corrige: "", duration: 60 });
 
-  const [form, setForm] = useState({
-    ueId: ues[0]?.id ?? 0,
-    chapterId: 0,
-    title: "",
-    subject: "",
-    corrige: "",
-    duration: 60,
-  });
-
-  const ueCode = useMemo(() => {
-    const id = attempt?.ue_id ?? form.ueId;
-    return ues.find((ue) => ue.id === id)?.code ?? "";
-  }, [attempt, form.ueId, ues]);
-
-  // ── resume: rehydrate stored progress, (re)structure if needed ──
-  useEffect(() => {
-    if (!resume) return;
-    if (resume.correction_json) {
-      try {
-        setCorrection(JSON.parse(resume.correction_json));
-      } catch {
-        /* view still shows score/total from the row */
-      }
-      if (resume.exercice_json) {
-        try {
-          setExercice(JSON.parse(resume.exercice_json));
-        } catch {
-          /* result view tolerates a missing subject */
-        }
-      }
-      return;
-    }
-    if (resume.answers_json) {
-      try {
-        setAnswers(JSON.parse(resume.answers_json));
-      } catch {
-        /* drafts lost — the subject itself is still there */
-      }
-    }
-    if (resume.exercice_json) {
-      try {
-        setExercice(JSON.parse(resume.exercice_json));
-        setStage("work");
-        return;
-      } catch {
-        /* fall through to re-structuring */
-      }
-    }
-    structure(resume);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const structure = async (a: AnnaleAttempt) => {
-    setStage("structuring");
-    setError(null);
-    try {
-      const ex = await genJson<Exercice>(structureSys(ues.find((u) => u.id === a.ue_id)?.code ?? ""), a.subject_text, 8000, model);
-      setExercice(ex);
-      await api.patchAnnale(a.id, { exercice_json: JSON.stringify(ex) });
-      setStage("work");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setStage("work"); // show the error in place, with a retry button
-    }
-  };
-
-  const start = async () => {
-    if (!form.title.trim() || !form.subject.trim() || !form.ueId) return;
-    setError(null);
-    try {
-      const created = await api.startAnnale({
-        ue_id: form.ueId,
-        chapter_id: form.chapterId || null,
-        title: form.title.trim(),
-        subject_text: form.subject,
-        corrige_text: form.corrige.trim() || null,
-        duration_minutes: form.duration,
-      });
-      setAttempt(created);
-      await structure(created);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  // ── the clock ──
+  const ueCode = useMemo(() => ues.find((ue) => ue.id === (attempt?.ue_id ?? form.ueId))?.code ?? "", [attempt, form.ueId, ues]);
   const remaining = attempt ? attempt.duration_minutes * 60 - elapsedSecondsSince(attempt.started_at) : 0;
+
   useEffect(() => {
     if (stage !== "work") return;
-    const id = window.setInterval(() => tick((v) => v + 1), 1000);
+    const id = window.setInterval(() => tick((value) => value + 1), 1000);
     return () => window.clearInterval(id);
   }, [stage]);
 
-  // ── debounced draft autosave, same pattern as the tutor's ExoPhase ──
   useEffect(() => {
-    if (stage !== "work" || !attempt || !Object.values(answers).some((a) => a?.trim())) return;
-    const id = setTimeout(() => {
-      api.patchAnnale(attempt.id, { answers_json: JSON.stringify(answers) });
-    }, 1500);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answers]);
+    if (stage !== "work" || !attempt || !Object.values(answers).some((answer) => answer.trim())) return;
+    const id = window.setTimeout(() => void api.patchAnnale(attempt.id, { answers_json: JSON.stringify(answers) }), 1200);
+    return () => window.clearTimeout(id);
+  }, [answers, attempt, stage]);
 
-  const submit = async () => {
-    if (!attempt || !exercice) return;
-    setStage("correcting");
-    setError(null);
-    try {
-      await api.patchAnnale(attempt.id, { answers_json: JSON.stringify(answers) });
-      const corr = await genJson<ExoCorrection>(
-        correctionSys(ueCode, !!attempt.corrige_text),
-        JSON.stringify({
-          sujet: exercice,
-          reponses_du_candidat: answers,
-          ...(attempt.corrige_text ? { corrige_officiel: attempt.corrige_text } : {}),
-        }),
-        8000,
-        model,
-      );
-      const elapsed = Math.min(elapsedSecondsSince(attempt.started_at), attempt.duration_minutes * 60);
-      const completed = await api.completeAnnale(attempt.id, JSON.stringify(corr), elapsed);
-      setAttempt(completed);
-      setCorrection(corr);
-      setStage("result");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setStage("work");
-    }
+  const copyPrompt = async (prompt: string) => {
+    const copied = await Promise.race([navigator.clipboard.writeText(prompt).then(() => true).catch(() => false), new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 800))]);
+    if (copied) { setPromptFallback(""); setPromptCopied(true); window.setTimeout(() => setPromptCopied(false), 2500); }
+    else setPromptFallback(prompt);
   };
 
-  const quit = async () => {
-    // An in-progress attempt stays resumable — quitting is not abandoning.
-    onClose();
+  const importSubject = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        setError("");
+        const parsed = validateExercise(String(reader.result));
+        const created = await api.startAnnale({ ue_id: form.ueId, chapter_id: form.chapterId || null, title: form.title.trim(), subject_text: form.subject, corrige_text: form.corrige.trim() || null, duration_minutes: form.duration });
+        await api.patchAnnale(created.id, { exercice_json: JSON.stringify(parsed) });
+        setAttempt({ ...created, exercice_json: JSON.stringify(parsed) });
+        setExercise(parsed);
+        setStage("work");
+      } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    };
+    reader.readAsText(file);
   };
 
-  const weakCount = correction?.corrections?.filter((c) => (c.bareme ?? 0) > 0 && (c.note ?? 0) < (c.bareme ?? 0) * 0.5).length ?? 0;
+  const prepareCorrection = async () => {
+    if (!attempt || !exercise) return;
+    await api.patchAnnale(attempt.id, { answers_json: JSON.stringify(answers) });
+    setPromptFallback(""); setPromptCopied(false); setStage("correction-import");
+  };
+
+  const importCorrection = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        if (!attempt) return;
+        setError("");
+        const parsed = validateCorrection(String(reader.result));
+        const elapsed = Math.min(elapsedSecondsSince(attempt.started_at), attempt.duration_minutes * 60);
+        const completed = await api.completeAnnale(attempt.id, JSON.stringify(parsed), elapsed);
+        setCorrection(parsed); setAttempt(completed); setStage("result");
+      } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    };
+    reader.readAsText(file);
+  };
+
+  const weakCount = correction?.corrections.filter((item) => item.bareme > 0 && item.note < item.bareme * .5).length ?? 0;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, overflowY: "auto", background: "var(--bg)" }}>
-      <div className="desktop-page" style={{ maxWidth: 860, padding: "34px 24px 80px", margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, marginBottom: 22 }}>
-          <div>
-            <div className="eyebrow">Entraînement en conditions d'examen</div>
-            <div className="work-title" style={{ fontSize: 30 }}>{attempt ? attempt.title : "Nouvelle annale"}</div>
+    <div className="annale-modal">
+      <div className="desktop-page" style={{ maxWidth: 860, padding: "34px 24px 80px" }}>
+        <header className="annale-modal-head"><div><div className="eyebrow">Entraînement hors ligne</div><div className="work-title" style={{ fontSize: 30 }}>{attempt?.title ?? "Nouvelle annale"}</div></div><div>{stage === "work" && attempt && <span className={`annale-clock${remaining < 300 ? " urgent" : ""}`}>{remaining <= 0 ? "Temps écoulé" : fmtClock(remaining)}</span>}<button className="soft-button" onClick={onClose}>Fermer</button></div></header>
+        {error && <div className="annale-error">{error}</div>}
+
+        {stage === "setup" && <section className="surface annale-setup">
+          <h2>1. Prépare le sujet</h2><p>Colle le sujet réel, copie le prompt dans ton LLM, puis importe le fichier structuré. Aucun appel au modèle n'est fait par l'application.</p>
+          <div className="annale-fields">
+            <div className="annale-field-pair"><select value={form.ueId} onChange={(event) => setForm((value) => ({ ...value, ueId: Number(event.target.value), chapterId: 0 }))} style={fieldStyle}>{ues.map((ue) => <option key={ue.id} value={ue.id}>{ue.code} · {ue.name}</option>)}</select><select value={form.chapterId} onChange={(event) => setForm((value) => ({ ...value, chapterId: Number(event.target.value) }))} style={fieldStyle}><option value={0}>Chapitre non précisé</option>{chapters.filter((chapter) => chapter.ue_id === form.ueId).map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.name}</option>)}</select></div>
+            <input value={form.title} onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))} placeholder="Titre — ex. DCG UE4 2025, dossier 2" style={fieldStyle} />
+            <textarea value={form.subject} onChange={(event) => setForm((value) => ({ ...value, subject: event.target.value }))} placeholder="Colle ici le sujet complet…" rows={9} style={fieldStyle} />
+            <textarea value={form.corrige} onChange={(event) => setForm((value) => ({ ...value, corrige: event.target.value }))} placeholder="Optionnel : corrigé officiel" rows={3} style={fieldStyle} />
+            <div className="annale-actions"><label>Durée <input type="number" min={5} max={300} step={5} value={form.duration} onChange={(event) => setForm((value) => ({ ...value, duration: Number(event.target.value) }))} style={{ ...fieldStyle, width: 85 }} /> min</label><button className="soft-button" disabled={!form.title.trim() || !form.subject.trim()} onClick={() => copyPrompt(subjectPrompt(ueCode, form.title, form.subject))}>{promptCopied ? "Prompt copié ✓" : "Copier le prompt"}</button><input ref={subjectFileRef} type="file" accept=".json,application/json" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) importSubject(file); }} /><button className="primary-button" disabled={!form.title.trim() || !form.subject.trim()} onClick={() => subjectFileRef.current?.click()}>Importer dcg-annale.json</button></div>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-            {stage === "work" && attempt && (
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 22,
-                  fontWeight: 700,
-                  padding: "6px 12px",
-                  borderRadius: 4,
-                  border: `1px solid ${remaining <= 0 ? "var(--accent-red)" : remaining < 300 ? "var(--accent-yellow)" : "var(--border)"}`,
-                  color: remaining <= 0 ? "var(--accent-red)" : remaining < 300 ? "var(--accent-yellow)" : "var(--text)",
-                }}
-              >
-                {remaining <= 0 ? "Temps écoulé" : fmtClock(remaining)}
-              </div>
-            )}
-            <button className="soft-button" onClick={quit}>Fermer</button>
-          </div>
-        </div>
+          {promptFallback && <textarea readOnly value={promptFallback} rows={7} onFocus={(event) => event.target.select()} style={{ ...fieldStyle, marginTop: 12 }} />}
+        </section>}
 
-        {error && (
-          <div style={{ border: "1px solid var(--accent-red)", color: "var(--accent-red)", borderRadius: 2, padding: "10px 12px", fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
-            {error}
-            {stage === "work" && !exercice && attempt && (
-              <button className="text-action" style={{ marginLeft: 10 }} onClick={() => structure(attempt)}>Réessayer →</button>
-            )}
-          </div>
-        )}
+        {stage === "work" && exercise && <><section className="surface annale-subject"><h2>{exercise.titre}</h2><p>{exercise.contexte}</p></section>{exercise.dossiers.map((dossier) => <section key={dossier.numero} className="surface annale-dossier"><header><strong>Dossier {dossier.numero} — {dossier.titre}</strong><span>{dossier.points} pts</span></header>{dossier.questions.map((question) => { const key = `${dossier.numero}-${question.numero}`; return <label key={key}><span><b>Q{question.numero}</b> ({question.points} pts) — {question.enonce}</span><textarea value={answers[key] ?? ""} onChange={(event) => setAnswers((value) => ({ ...value, [key]: event.target.value }))} rows={4} placeholder="Ta réponse…" style={fieldStyle} /></label>; })}</section>)}<div className="annale-work-actions"><button className="soft-button" onClick={onClose}>Mettre en pause</button><button className="primary-button" onClick={prepareCorrection}>Rendre la copie →</button></div></>}
 
-        {stage === "setup" && (
-          <section className="surface" style={{ padding: 22 }}>
-            <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
-              Colle le texte d'un sujet d'annale (ou d'un extrait), choisis une durée réaliste, puis travaille sans
-              support — exactement comme le jour de l'épreuve. La correction suit le barème ; chaque réponse faible
-              rejoint le carnet d'erreurs.
-            </p>
-            <div style={{ display: "grid", gap: 11 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <select value={form.ueId} onChange={(e) => setForm((f) => ({ ...f, ueId: Number(e.target.value), chapterId: 0 }))} style={fieldStyle}>
-                  {ues.map((ue) => <option key={ue.id} value={ue.id}>{ue.code} · {ue.name}</option>)}
-                </select>
-                <select value={form.chapterId} onChange={(e) => setForm((f) => ({ ...f, chapterId: Number(e.target.value) }))} style={fieldStyle}>
-                  <option value={0}>Chapitre non précisé</option>
-                  {chapters.filter((c) => c.ue_id === form.ueId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <input
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="Titre — ex. DCG UE4 2023, dossier 2 (TVA)"
-                style={fieldStyle}
-              />
-              <textarea
-                value={form.subject}
-                onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
-                placeholder="Colle ici le texte du sujet (contexte, documents, questions)…"
-                rows={10}
-                style={fieldStyle}
-              />
-              <textarea
-                value={form.corrige}
-                onChange={(e) => setForm((f) => ({ ...f, corrige: e.target.value }))}
-                placeholder="Optionnel : colle le corrigé officiel — la correction s'en servira comme référence."
-                rows={4}
-                style={fieldStyle}
-              />
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <label style={{ fontSize: 12, color: "var(--muted)" }}>Durée</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={300}
-                  step={5}
-                  value={form.duration}
-                  onChange={(e) => setForm((f) => ({ ...f, duration: Number(e.target.value) }))}
-                  style={{ ...fieldStyle, width: 90 }}
-                />
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>minutes</span>
-                <button
-                  className="primary-button"
-                  style={{ marginLeft: "auto", minWidth: 200 }}
-                  disabled={!form.title.trim() || !form.subject.trim()}
-                  onClick={start}
-                >
-                  Lancer le chrono →
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+        {stage === "correction-import" && attempt && exercise && <section className="surface annale-setup"><h2>2. Fais corriger ta copie</h2><p>Le chrono est arrêté. Copie le prompt de correction dans ton LLM, puis importe le fichier obtenu. Les réponses faibles rejoindront automatiquement ton carnet d'erreurs.</p><div className="annale-actions"><button className="soft-button" onClick={() => copyPrompt(correctionPrompt(ueCode, exercise, answers, attempt.corrige_text))}>{promptCopied ? "Prompt copié ✓" : "Copier le prompt de correction"}</button><input ref={correctionFileRef} type="file" accept=".json,application/json" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) importCorrection(file); }} /><button className="primary-button" onClick={() => correctionFileRef.current?.click()}>Importer dcg-correction.json</button></div>{promptFallback && <textarea readOnly value={promptFallback} rows={9} onFocus={(event) => event.target.select()} style={{ ...fieldStyle, marginTop: 12 }} />}</section>}
 
-        {stage === "structuring" && <Wait text="Mise en forme du sujet (dossiers, questions, barème)…" />}
-        {stage === "correcting" && <Wait text="Correction de ta copie selon le barème…" />}
-
-        {stage === "work" && exercice && (
-          <>
-            <section className="surface" style={{ padding: 20, marginBottom: 16 }}>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 19, color: "var(--text)", marginBottom: 8 }}>{exercice.titre}</div>
-              <p style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{exercice.contexte}</p>
-            </section>
-            {(exercice.dossiers ?? []).map((dossier) => (
-              <section key={dossier.numero} className="surface" style={{ padding: 20, marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Dossier {dossier.numero} — {dossier.titre}</div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>{dossier.points} pts</div>
-                </div>
-                {(dossier.questions ?? []).map((question) => {
-                  const key = `${dossier.numero}-${question.numero}`;
-                  return (
-                    <div key={key} style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55, marginBottom: 7 }}>
-                        <strong>Q{question.numero}</strong> <span style={{ color: "var(--muted)", fontSize: 11 }}>({question.points} pts)</span> — {question.enonce}
-                      </div>
-                      <textarea
-                        value={answers[key] ?? ""}
-                        onChange={(e) => setAnswers((a) => ({ ...a, [key]: e.target.value }))}
-                        rows={4}
-                        placeholder="Ta réponse…"
-                        style={fieldStyle}
-                      />
-                    </div>
-                  );
-                })}
-              </section>
-            ))}
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button className="soft-button" onClick={quit}>Mettre en pause (reprise possible)</button>
-              <button className="primary-button" style={{ minWidth: 220 }} onClick={submit}>
-                Rendre la copie → correction
-              </button>
-            </div>
-          </>
-        )}
-
-        {stage === "result" && attempt && (
-          <>
-            <section className="surface" style={{ padding: 22, marginBottom: 16, textAlign: "center" }}>
-              <div className="section-kicker" style={{ marginBottom: 10 }}>Résultat</div>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 40, color: "var(--text)" }}>
-                {attempt.score ?? 0} <span style={{ fontSize: 20, color: "var(--muted)" }}>/ {attempt.total ?? 0}</span>
-              </div>
-              {correction?.appreciation && (
-                <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6, maxWidth: 560, margin: "10px auto 0" }}>{correction.appreciation}</p>
-              )}
-              {weakCount > 0 && (
-                <p style={{ color: "var(--accent-yellow)", fontSize: 12, marginTop: 10 }}>
-                  {weakCount} réponse{weakCount > 1 ? "s" : ""} faible{weakCount > 1 ? "s" : ""} ajoutée{weakCount > 1 ? "s" : ""} au carnet d'erreurs (et au paquet de cartes).
-                </p>
-              )}
-            </section>
-            {(correction?.corrections ?? []).map((item, i) => {
-              const weak = (item.bareme ?? 0) > 0 && (item.note ?? 0) < (item.bareme ?? 0) * 0.5;
-              return (
-                <section key={i} className="surface" style={{ padding: 16, marginBottom: 10, borderLeft: `3px solid ${weak ? "var(--accent-red)" : "var(--accent-green)"}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)" }}>DOSSIER {item.dossier} · QUESTION {item.question}</div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: weak ? "var(--accent-red)" : "var(--accent-green)", flexShrink: 0 }}>
-                      {item.note}/{item.bareme}
-                    </div>
-                  </div>
-                  <p style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6, marginBottom: 6 }}>{item.evaluation}</p>
-                  <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
-                    <strong style={{ color: "var(--text)" }}>Attendu :</strong> {item.reponse_attendue}
-                  </p>
-                </section>
-              );
-            })}
-            <button className="primary-button" style={{ width: "100%", marginTop: 8 }} onClick={onClose}>
-              Terminer
-            </button>
-          </>
-        )}
+        {stage === "result" && attempt && <><section className="surface annale-result"><small>RÉSULTAT</small><strong>{attempt.score ?? 0} <span>/ {attempt.total ?? 0}</span></strong>{correction?.appreciation && <p>{correction.appreciation}</p>}{weakCount > 0 && <em>{weakCount} réponse{weakCount > 1 ? "s" : ""} faible{weakCount > 1 ? "s" : ""} ajoutée{weakCount > 1 ? "s" : ""} au carnet d'erreurs.</em>}</section>{correction?.corrections.map((item, index) => { const weak = item.bareme > 0 && item.note < item.bareme * .5; return <section key={index} className={`surface correction-row${weak ? " weak" : ""}`}><header><b>DOSSIER {item.dossier} · QUESTION {item.question}</b><strong>{item.note}/{item.bareme}</strong></header><p>{item.evaluation}</p><p><b>Attendu :</b> {item.reponse_attendue}</p></section>; })}<button className="primary-button" style={{ width: "100%" }} onClick={onClose}>Terminer</button></>}
       </div>
     </div>
   );
 }
 
-function Wait({ text }: { text: string }) {
-  return (
-    <section className="surface" style={{ padding: 40, textAlign: "center" }}>
-      <div className="blk" style={{ fontFamily: "var(--font-display)", fontSize: 18, color: "var(--text)", marginBottom: 8 }}>…</div>
-      <p style={{ color: "var(--muted)", fontSize: 13 }}>{text}</p>
-    </section>
-  );
-}
-
-const fieldStyle: CSSProperties = {
-  width: "100%",
-  background: "var(--input)",
-  border: "1px solid var(--input-border)",
-  borderRadius: 2,
-  padding: "10px 12px",
-  color: "var(--text)",
-  fontSize: 13,
-  lineHeight: 1.55,
-};
+const fieldStyle: CSSProperties = { width: "100%", background: "var(--input)", border: "1px solid var(--input-border)", borderRadius: 6, padding: "10px 12px", color: "var(--text)", fontSize: 13, lineHeight: 1.55 };

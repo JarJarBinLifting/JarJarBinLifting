@@ -3,6 +3,7 @@ import { useAppState } from "../../state/AppState";
 import * as api from "../../lib/api";
 import { avgScorePct, chapterProgress, todayIso } from "../../lib/format";
 import type { Chapter, ChapterStatus, Ue } from "../../lib/types";
+import { LessonManager } from "./LessonManager";
 
 const STATUS_META: Record<ChapterStatus, { color: string; label: string; icon: string; bg: string }> = {
   todo: { color: "var(--muted)", label: "À faire", icon: "○", bg: "transparent" },
@@ -19,7 +20,7 @@ export function UEDetail({
   onBack: () => void;
   onStudyChapter: (chapter: Chapter) => void;
 }) {
-  const { chapters, qcmScores, refreshAll } = useAppState();
+  const { chapters, qcmScores, lessons, refreshAll } = useAppState();
   const ueChapters = chapters.filter((c) => c.ue_id === ue.id).sort((a, b) => a.position - b.position);
   const pct = chapterProgress(ueChapters);
   const ueChapterIds = new Set(ueChapters.map((c) => c.id));
@@ -27,6 +28,7 @@ export function UEDetail({
   const avg = avgScorePct(ueScores);
 
   const [scoreModalChapter, setScoreModalChapter] = useState<Chapter | null>(null);
+  const [lessonChapter, setLessonChapter] = useState<Chapter | null>(null);
   const [notesDraft, setNotesDraft] = useState({
     points_forts: ue.points_forts ?? "",
     points_faibles: ue.points_faibles ?? "",
@@ -87,6 +89,8 @@ export function UEDetail({
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {ueChapters.map((ch) => {
             const s = STATUS_META[ch.status];
+            const lesson = lessons.find((item) => item.chapter_id === ch.id);
+            const lessonStatus = !lesson ? "À préparer" : lesson.flag_count || lesson.warning_count ? "À vérifier" : (lesson.prompt_version ?? 0) < 2 ? "Ancienne" : "Prête";
             return (
               <div
                 key={ch.id}
@@ -103,6 +107,7 @@ export function UEDetail({
                   {ch.name}
                 </div>
                 <div style={{ fontSize: 10, color: s.color, fontWeight: 700, letterSpacing: 0.5, minWidth: 55, textAlign: "right" }}>{s.label}</div>
+                <button className={`lesson-status ${lessonStatus === "Prête" ? "ready" : lessonStatus === "À vérifier" ? "warning" : ""}`} onClick={() => lesson ? setLessonChapter(ch) : onStudyChapter(ch)}>{lessonStatus}</button>
                 <button
                   onClick={() => onStudyChapter(ch)}
                   style={{ background: ue.color ?? "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "6px 10px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}
@@ -114,6 +119,8 @@ export function UEDetail({
           })}
         </div>
       </div>
+
+      {lessonChapter && <LessonManager chapter={lessonChapter} onClose={() => setLessonChapter(null)} />}
 
       <div className="ue-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 20, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>

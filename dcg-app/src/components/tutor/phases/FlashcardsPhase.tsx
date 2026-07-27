@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as api from "../../../lib/api";
 import type { ConceptConfidence, FlashcardRow } from "../../../lib/types";
 import { Consigne } from "../shared";
+import { SourceExcerpt } from "../../SourceExcerpt";
 
 export function FlashcardsPhase({
   cards: initialCards,
@@ -144,6 +145,7 @@ export function FlashcardsPhase({
               <p style={{ fontSize: 15, lineHeight: 1.65, textAlign: "center", margin: 0, fontFamily: flip ? "var(--font-body)" : "var(--font-story)" }}>{flip ? c.answer : c.question}</p>
               {!flip && <span style={{ marginTop: 12, fontSize: 11, color: "var(--muted)" }}>Cliquer pour retourner</span>}
             </div>
+            {flip && <SourceExcerpt reference={c.source_ref} />}
             {flip && (
               <div style={{ display: "flex", gap: 10 }}>
                 <button

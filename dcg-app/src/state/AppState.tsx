@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import * as api from "../lib/api";
 import { DEFAULT_MODEL } from "../lib/models";
-import type { Chapter, DueChapter, DueFlashcardsResponse, DueQuizResponse, ErrorNote, ExamScenarioRow, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue } from "../lib/types";
+import { DEFAULT_EXAM_DATE } from "../lib/examPlan";
+import type { Chapter, DueChapter, DueFlashcardsResponse, DueQuizResponse, ErrorNote, ExamScenarioRow, LessonSummary, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue } from "../lib/types";
 
 interface AppStateValue {
   ready: boolean;
@@ -15,8 +16,11 @@ interface AppStateValue {
   errorNotes: ErrorNote[];
   skillProfiles: SkillProfileRow[];
   examScenario: ExamScenarioRow[];
+  lessons: LessonSummary[];
   examDate: string | null;
   model: string;
+  studentName: string;
+  focusUeIds: number[];
   refreshAll: () => Promise<void>;
   setExamDate: (iso: string) => Promise<void>;
   setModel: (modelId: string) => Promise<void>;
@@ -36,11 +40,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [errorNotes, setErrorNotes] = useState<ErrorNote[]>([]);
   const [skillProfiles, setSkillProfiles] = useState<SkillProfileRow[]>([]);
   const [examScenario, setExamScenario] = useState<ExamScenarioRow[]>([]);
-  const [examDate, setExamDateState] = useState<string | null>(null);
+  const [lessons, setLessons] = useState<LessonSummary[]>([]);
+  const [examDate, setExamDateState] = useState<string | null>(DEFAULT_EXAM_DATE);
   const [model, setModelState] = useState<string>(DEFAULT_MODEL);
+  const [studentName, setStudentName] = useState("");
+  const [focusUeIds, setFocusUeIds] = useState<number[]>([]);
 
   const refreshAll = useCallback(async () => {
-    const [uesR, chaptersR, qcmR, sessionsR, dueR, dueCardsR, dueQuizR, errorsR, skillsR, scenarioR, examR, modelR] = await Promise.all([
+    const [uesR, chaptersR, qcmR, sessionsR, dueR, dueCardsR, dueQuizR, errorsR, skillsR, scenarioR, lessonsR, examR, modelR, nameR, focusR] = await Promise.all([
       api.listUes(),
       api.listAllChapters(),
       api.listAllQcmScores(),
@@ -51,8 +58,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       api.listErrorNotes(),
       api.listSkillProfiles(),
       api.listExamScenario(),
+      api.listActiveLessons(),
       api.getMeta("exam_date"),
       api.getMeta("anthropic_model"),
+      api.getMeta("student_name"),
+      api.getMeta("focus_ue_ids"),
     ]);
     setUes(uesR);
     setChapters(chaptersR);
@@ -64,8 +74,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setErrorNotes(errorsR);
     setSkillProfiles(skillsR);
     setExamScenario(scenarioR);
-    setExamDateState(examR);
+    setLessons(lessonsR);
+    const resolvedExamDate = examR || DEFAULT_EXAM_DATE;
+    setExamDateState(resolvedExamDate);
+    if (!examR) void api.setMeta("exam_date", resolvedExamDate);
     setModelState(modelR || DEFAULT_MODEL);
+    setStudentName(nameR || "");
+    try { setFocusUeIds(focusR ? JSON.parse(focusR) : []); } catch { setFocusUeIds([]); }
     setReady(true);
   }, []);
 
@@ -85,7 +100,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppStateCtx.Provider
-      value={{ ready, ues, chapters, qcmScores, timerSessions, dueChapters, dueFlashcards, dueQuiz, errorNotes, skillProfiles, examScenario, examDate, model, refreshAll, setExamDate, setModel }}
+      value={{ ready, ues, chapters, qcmScores, timerSessions, dueChapters, dueFlashcards, dueQuiz, errorNotes, skillProfiles, examScenario, lessons, examDate, model, studentName, focusUeIds, refreshAll, setExamDate, setModel }}
     >
       {children}
     </AppStateCtx.Provider>

@@ -1,5 +1,6 @@
 import type {
   ApiKeyStatus,
+  CalibrationHistory,
   Chapter,
   CompleteTutorSessionResult,
   ConceptProgress,
@@ -19,11 +20,15 @@ import type {
   ModelUsageRow,
   QcmScoreRow,
   SessionLogRow,
+  SourceReference,
   SkillProfileRow,
   TutorSessionRow,
   Ue,
   WeakChapter,
   ExamSkill,
+  LessonFlag,
+  LessonSummary,
+  LessonVersion,
 } from "./types";
 
 /// Every route this app talks to is same-origin (`/api/...`), served by the
@@ -107,6 +112,7 @@ export const testAnthropicConnection = () => post<boolean>("/anthropic/test");
 
 export const seedDefaultCurriculum = () => post<boolean>("/planner/seed");
 export const listUes = () => get<Ue[]>("/planner/ues");
+export const getCalibrationHistory = () => get<CalibrationHistory>("/planner/calibration-history");
 export const updateUeNotes = (
   ueId: number,
   pointsForts: string | null,
@@ -181,6 +187,15 @@ export const setExamScenario = (ueId: number, currentMark: number | null, target
 export const getMeta = (key: string) => get<string | null>(`/planner/meta/${key}`);
 export const setMeta = (key: string, value: string) => put<void>(`/planner/meta/${key}`, { value });
 
+// ─── imported lesson library ───
+export const listActiveLessons = () => get<LessonSummary[]>("/lessons");
+export const listLessonVersions = (chapterId: number) => get<LessonVersion[]>(`/lessons/chapters/${chapterId}`);
+export const importLessonVersion = (chapterId: number, rawJson: string, warningCount: number) => post<LessonVersion>(`/lessons/chapters/${chapterId}`, { raw_json: rawJson, warning_count: warningCount });
+export const activateLessonVersion = (id: number) => post<LessonVersion>(`/lessons/${id}/activate`);
+export const listLessonFlags = (id: number) => get<LessonFlag[]>(`/lessons/${id}/flags`);
+export const flagLessonItem = (id: number, body: { item_type: LessonFlag["item_type"]; item_index: number | null; reason: string }) => post<LessonFlag>(`/lessons/${id}/flags`, body);
+export const resolveLessonFlag = (id: number) => post<void>(`/lessons/flags/${id}/resolve`);
+
 // ─── Tutor ───
 
 export const startOrResumeTutorSession = (
@@ -190,6 +205,8 @@ export const startOrResumeTutorSession = (
   difficulty: string,
   model: string,
   isRevision: boolean,
+  isOfflineLesson = false,
+  lessonVersionId: number | null = null,
 ) =>
   post<TutorSessionRow>("/tutor/sessions/start", {
     chapter_id: chapterId,
@@ -198,6 +215,8 @@ export const startOrResumeTutorSession = (
     difficulty,
     model,
     is_revision: isRevision,
+    is_offline_lesson: isOfflineLesson,
+    lesson_version_id: lessonVersionId,
   });
 
 export const getLatestCompletedSession = (chapterId: number) =>
@@ -230,7 +249,7 @@ export const listFlashcards = (chapterId: number) => get<FlashcardRow[]>(`/tutor
 export const saveFlashcards = (
   chapterId: number,
   tutorSessionId: number,
-  cards: { concept_id: string | null; question: string; answer: string }[],
+  cards: { concept_id: string | null; question: string; answer: string; source_ref?: SourceReference }[],
 ) => post<FlashcardRow[]>(`/tutor/chapters/${chapterId}/flashcards`, { tutor_session_id: tutorSessionId, cards });
 /** Scores an active-recall attempt with SM-2 quality 0..5. The boolean form
  * remains supported while the in-session flow is upgraded. */

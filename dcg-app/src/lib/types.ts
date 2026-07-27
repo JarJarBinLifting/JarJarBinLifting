@@ -64,8 +64,35 @@ export interface TutorSessionRow {
   input_tokens: number;
   output_tokens: number;
   is_revision: boolean;
+  is_offline_lesson: boolean;
   started_at: string;
   completed_at: string | null;
+}
+
+export type CalibrationStatus = "aligned" | "overconfident" | "cautious";
+export type CalibrationTrend = "improving" | "stable" | "worsening" | "insufficient";
+
+export interface CalibrationPoint {
+  chapter_name: string;
+  completed_at: string;
+  self_rated_percent: number;
+  assessed_percent: number;
+  gap: number;
+  status: CalibrationStatus;
+}
+
+export interface UeCalibrationHistory {
+  ue_id: number;
+  ue_code: string;
+  ue_name: string;
+  ue_color: string | null;
+  average_absolute_gap: number;
+  trend: CalibrationTrend;
+  sessions: CalibrationPoint[];
+}
+
+export interface CalibrationHistory {
+  ues: UeCalibrationHistory[];
 }
 
 export interface ModelUsageRow {
@@ -97,6 +124,7 @@ export interface ErrorNote {
   ladder_step: number;
   status: ErrorStatus;
   next_review_date: string;
+  updated_at: string;
 }
 
 export interface SkillProfileRow {
@@ -116,12 +144,20 @@ export interface ExamScenarioRow {
   target_mark: number | null;
 }
 
+/** Exact excerpt copied from the chapter supplied to the LLM. The app can
+ * validate its shape and preserve it locally, but does not claim to verify
+ * the underlying source text it has not stored. */
+export interface SourceReference {
+  extrait: string;
+  section?: string;
+}
 export interface FlashcardRow {
   id: number;
   chapter_id: number;
   concept_id: string | null;
   question: string;
   answer: string;
+  source_ref: SourceReference | null;
   box_level: number;
   correct_streak: number;
   mastered: boolean;
@@ -141,6 +177,7 @@ export interface DueFlashcard {
   concept_id: string | null;
   question: string;
   answer: string;
+  source_ref: SourceReference | null;
   box_level: number;
   sm2_repetitions: number;
   sm2_interval_days: number;
@@ -167,6 +204,7 @@ export interface ConceptProgress {
   due_cards: number;
   avg_sm2_repetitions: number;
   next_review_date: string | null;
+  last_exposure_at: string | null;
 }
 
 /** One question in the daily "quiz éclair" — a previously missed QCM
@@ -181,6 +219,7 @@ export interface DueQuizItem {
   question: string;
   theme: string | null;
   options: string[];
+  source_ref: SourceReference | null;
 }
 
 export interface DueQuizResponse {
@@ -305,6 +344,41 @@ export interface LocalConfig {
   db_open: boolean;
 }
 
+export interface LessonSummary {
+  id: number;
+  chapter_id: number;
+  version_number: number;
+  prompt_version: number | null;
+  difficulty: string;
+  source: string | null;
+  generated_at: string | null;
+  generated_with: string | null;
+  story_steps: number;
+  flashcard_count: number;
+  qcm_count: number;
+  warning_count: number;
+  flag_count: number;
+  imported_at: string;
+}
+
+export interface LessonVersion extends LessonSummary {
+  chapter_name: string;
+  ue_code: string;
+  format_version: number;
+  raw_json: string;
+  is_active: boolean;
+}
+
+export interface LessonFlag {
+  id: number;
+  lesson_version_id: number;
+  item_type: "flashcard" | "qcm" | "lesson";
+  item_index: number | null;
+  reason: string;
+  status: "active" | "resolved";
+  created_at: string;
+}
+
 // ─── Tutor domain shapes (LLM-generated JSON, parsed from the *_json columns) ───
 
 export type ActivityType = "prediction" | "liaison" | "contrefactuel";
@@ -320,6 +394,10 @@ export interface StoryEtape {
   application: string;
   a_retenir: string;
   question_rappel: string;
+  /** Offline lessons only: pre-written feedback for each entry of
+   * `hypotheses`, generated alongside the story in the claude.ai chat —
+   * stands in for the live per-answer feedback call. */
+  feedbacks?: string[];
 }
 
 export interface Story {
@@ -344,9 +422,18 @@ export interface QcmQuestion {
   options: string[];
   correct: number;
   explication: string;
+  /** Exact chapter excerpt supplied with imported lessons (prompt v6+). */
+  source_ref?: SourceReference;
   /** Optional on older imports; aligned with `options` and explains why each
    * choice is right or tempting. */
   option_feedbacks?: string[];
+  /** Optional comparison metadata emitted by lesson-import prompt v4. It
+   * identifies two genuinely confusable notions and their decisive rule. */
+  confusion?: {
+    notion_a: string;
+    notion_b: string;
+    distinction: string;
+  };
 }
 
 export interface Qcm {

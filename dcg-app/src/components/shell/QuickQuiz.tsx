@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { DueQuizItem, QuizAnswerResult } from "../../lib/types";
+import { SourceExcerpt } from "../SourceExcerpt";
 
 function reviewDateLabel(isoDate: string): string {
   // The API sends a calendar date. Midday avoids an accidental UTC offset
@@ -190,6 +191,7 @@ export function QuickQuiz({ items, total, onClose }: { items: DueQuizItem[]; tot
                     <><br /><br /><strong>La règle à retenir :</strong> {verdict.explication}</>
                   )}
                 </div>
+                <SourceExcerpt reference={item.source_ref} />
                 <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "-5px 0 14px", textAlign: "center" }}>
                   Prochaine reprise : <strong style={{ color: "var(--text)" }}>{reviewDateLabel(verdict.next_review_date)}</strong>
                   {verdict.was_correct

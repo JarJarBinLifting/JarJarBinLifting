@@ -1,8 +1,9 @@
 # DCG Étude
 
 A local web app (Rust/axum server + React frontend, opened in your regular
-browser) that merges an AI-tutored study session per chapter with a DCG
-programme tracker and a spaced-repetition review agenda. Single-machine app —
+browser) that turns lesson JSON files prepared with the LLM of your choice into
+guided DCG study sessions, then connects them to a programme tracker and a
+spaced-repetition review agenda. Single-machine app —
 its SQLite database is created automatically in the OS app-data directory on
 first launch, no setup required. Everything runs on `127.0.0.1` only; nothing
 is exposed to the network.
@@ -82,11 +83,35 @@ The repository has a build workflow: on GitHub, open **Actions → "Build DCG
 
 The database is created automatically — nothing to configure. Just:
 
-1. Settings → add an Anthropic API key (console.anthropic.com — billed
-   per-token, separate from a claude.ai subscription, which cannot be
-   connected to a third-party app). The key is stored in the OS keychain,
-   read only by the Rust server, and never sent to the browser.
-2. Optionally set an exam date for the dashboard countdown.
+1. The next DCG exam date defaults to **30 May 2027** and drives the dashboard's
+   coverage, consolidation, annales and final-revision phases.
+2. Open a chapter, copy its lesson prompt, use it with the complete chapter in
+   the LLM of your choice, then import the resulting `dcg-lecon.json`.
+
+## Leçons importées (aucune clé API)
+
+A chapter is always studied from an imported lesson file. The app never sends
+the chapter or the student's work to a model:
+
+1. Open the chapter and use **Copier le prompt de la leçon** (the prompt embeds
+   the chapter name, UE and chosen QCM difficulty).
+2. Paste the prompt into your preferred LLM together with the chapter content
+   (pasted text or an attached PDF). Claude replies with a downloadable
+   `dcg-lecon.json` containing the story, the flashcards and the QCM — plus
+   pre-written feedback for every hypothesis of every story step.
+3. Back in the app, **Importer dcg-lecon.json** validates the structure and
+   previews the number of notions, flashcards and QCM questions before start.
+
+Sessions started this way run fully offline (`is_offline_lesson` on the
+session row): Découverte → Mémorisation → QCM → Bilan, skipping the two
+stages that need a live model (Socratic dialogue and corrected case study —
+do those in the claude.ai chat if you want them). Everything downstream
+still works with zero API calls, because it always was local: QCM grading,
+missed questions banked into the quiz éclair and the error notebook,
+flashcards feeding the révision éclair, the Leitner agenda, and the bilan's
+compte-rendu (composed from the session's structured results instead of by
+the model). Revisions of an imported chapter also run offline, reusing the
+lesson's QCM.
 
 Settings → "Exporter une sauvegarde" downloads a portable copy of your data
 through the browser, any time — useful before a risky change, or just as a
@@ -104,10 +129,18 @@ backup, since everything lives in that one local file.
 - **Planner shell** (Dashboard / UE detail / Timer): tracks chapters, QCM
   scores, and study-session time, all persisted to SQLite through the
   planner routes.
-- **Tutor** (`src/components/tutor/`): a 6-stage AI-guided session per chapter
-  (story-driven discovery → flashcards → QCM → Socratic dialogue → case study →
-  summary). Every phase's output (story, flashcards, confidence ratings, QCM
-  results, the full Socratic transcript, the exercise + its correction) is
+- **Lesson library**: every imported lesson is stored as an immutable version
+  with its source, model, generation date, prompt/schema version and content
+  counts. A chapter shows whether its lesson is ready, outdated or needs
+  attention. Flagging, correcting or excluding a card/QCM creates a new
+  version; older versions remain recoverable and existing historical lessons
+  are migrated into the library automatically.
+- **First-run onboarding**: records the student's name, the 30 May 2027 exam
+  target and the UE currently in focus. These priorities guide the next new
+  chapter without hiding the rest of the programme.
+- **Tutor** (`src/components/tutor/`): a guided offline session per chapter
+  (story-driven discovery → flashcards → QCM → summary). Every phase's output
+  (story, flashcards, confidence ratings and QCM results) is
   saved to the database as it happens, not just at the end.
 - **Agenda**: chapters return automatically for review based on a
   chapter-level Leitner scheduler (`server/src/handlers/scheduler.rs`,
@@ -135,12 +168,12 @@ backup, since everything lives in that one local file.
   explication) and re-asked on their own schedule, capped at 10/day.
   Graded server-side, zero API calls. Re-missing a banked question in a
   later session resets its schedule instead of duplicating it.
-- **Annales chronométrées** (`src/components/shell/AnnaleModal.tsx`, from
-  the Pilotage screen): paste a real past exam paper, the model structures
-  it into dossiers/questions with a barème (one call), then work it against
-  a visible countdown — answers autosave as drafts, so closing mid-attempt
-  resumes. Submitting triggers a barème-based correction (one call,
-  optionally guided by a pasted official corrigé). Weak answers (< 50% of
+- **Annales chronométrées** (`src/components/shell/AnnaleModal.tsx`): paste a
+  real past paper, copy the generated prompt to your preferred LLM, then import
+  the structured JSON and work it against a visible countdown. Answers autosave
+  as drafts, so closing mid-attempt resumes. Correction uses the same hand-off:
+  copy a prompt containing the copy, then import the correction JSON (optionally
+  guided by a pasted official corrigé). Weak answers (< 50% of
   the barème) flow into the error notebook with source `annale`, and the
   working time is logged as a study session.
 - **Automatic backups** (`server/src/handlers/backups.rs`): one consistent
@@ -156,7 +189,10 @@ backup, since everything lives in that one local file.
   quiz counts, QCM average, error-notebook movement (created, mastered,
   stalled on the ladder), the week's annale scores, and what the next 7
   days ask. Pure SQL, opens instantly.
-- **Fully offline UI**: the four fonts are self-hosted (latin-subset
-  woff2, ~250 KB, embedded in the binary via the Vite build) — the only
-  network dependency left in the entire app is api.anthropic.com for the
-  tutor.
+- **Progress and seven-day review**: the Progrès screen charts six weeks of QCM
+  results, programme/lesson/error movement and a rolling seven-day usage check
+  so product decisions can be based on a real week of study rather than adding
+  features immediately.
+- **Fully offline UI**: the fonts are self-hosted and all study, scheduling,
+  grading, backup and review work remains on the machine. The LLM hand-off is
+  explicit through copied prompts and imported JSON files.

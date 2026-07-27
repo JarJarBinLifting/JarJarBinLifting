@@ -1,6 +1,8 @@
 use crate::appstate::{AppError, AppState};
 use crate::db::with_conn;
-use crate::models::{Chapter, ErrorNote, ExamScenarioRow, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue};
+use crate::models::{
+    Chapter, ErrorNote, ExamScenarioRow, QcmScoreRow, SessionLogRow, SkillProfileRow, Ue,
+};
 use axum::extract::{Path, State};
 use axum::Json;
 use rusqlite::{params, Connection};
@@ -169,7 +171,9 @@ pub fn seed_default_curriculum(state: &AppState) -> Result<bool, String> {
     })
 }
 
-pub async fn seed_default_curriculum_route(State(state): State<AppState>) -> Result<Json<bool>, AppError> {
+pub async fn seed_default_curriculum_route(
+    State(state): State<AppState>,
+) -> Result<Json<bool>, AppError> {
     seed_default_curriculum(&state).map(Json).map_err(AppError)
 }
 
@@ -206,7 +210,11 @@ pub struct UpdateUeNotesRequest {
     pub notes: Option<String>,
 }
 
-pub async fn update_ue_notes(State(state): State<AppState>, Path(ue_id): Path<i64>, Json(body): Json<UpdateUeNotesRequest>) -> Result<(), AppError> {
+pub async fn update_ue_notes(
+    State(state): State<AppState>,
+    Path(ue_id): Path<i64>,
+    Json(body): Json<UpdateUeNotesRequest>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "UPDATE ues SET points_forts = ?1, points_faibles = ?2, notes = ?3, updated_at = datetime('now')
@@ -228,7 +236,10 @@ pub(crate) fn row_to_chapter(row: &rusqlite::Row) -> rusqlite::Result<Chapter> {
     })
 }
 
-pub async fn list_chapters(State(state): State<AppState>, Path(ue_id): Path<i64>) -> Result<Json<Vec<Chapter>>, AppError> {
+pub async fn list_chapters(
+    State(state): State<AppState>,
+    Path(ue_id): Path<i64>,
+) -> Result<Json<Vec<Chapter>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare("SELECT id, ue_id, name, position, status FROM chapters WHERE ue_id = ?1 ORDER BY position")?;
         let rows = stmt.query_map(params![ue_id], row_to_chapter)?;
@@ -238,9 +249,13 @@ pub async fn list_chapters(State(state): State<AppState>, Path(ue_id): Path<i64>
     .map_err(AppError)
 }
 
-pub async fn list_all_chapters(State(state): State<AppState>) -> Result<Json<Vec<Chapter>>, AppError> {
+pub async fn list_all_chapters(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Chapter>>, AppError> {
     with_conn(&state.db, |conn| {
-        let mut stmt = conn.prepare("SELECT id, ue_id, name, position, status FROM chapters ORDER BY ue_id, position")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, ue_id, name, position, status FROM chapters ORDER BY ue_id, position",
+        )?;
         let rows = stmt.query_map([], row_to_chapter)?;
         rows.collect()
     })
@@ -256,8 +271,16 @@ fn cycle_status(current: &str) -> &'static str {
     }
 }
 
-pub fn set_chapter_status(conn: &Connection, chapter_id: i64, new_status: &str) -> rusqlite::Result<Chapter> {
-    let old_status: String = conn.query_row("SELECT status FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
+pub fn set_chapter_status(
+    conn: &Connection,
+    chapter_id: i64,
+    new_status: &str,
+) -> rusqlite::Result<Chapter> {
+    let old_status: String = conn.query_row(
+        "SELECT status FROM chapters WHERE id = ?1",
+        params![chapter_id],
+        |r| r.get(0),
+    )?;
 
     conn.execute(
         "UPDATE chapters SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -275,9 +298,16 @@ pub fn set_chapter_status(conn: &Connection, chapter_id: i64, new_status: &str) 
     )
 }
 
-pub async fn cycle_chapter_status(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Chapter>, AppError> {
+pub async fn cycle_chapter_status(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<Chapter>, AppError> {
     with_conn(&state.db, |conn| {
-        let current: String = conn.query_row("SELECT status FROM chapters WHERE id = ?1", params![chapter_id], |r| r.get(0))?;
+        let current: String = conn.query_row(
+            "SELECT status FROM chapters WHERE id = ?1",
+            params![chapter_id],
+            |r| r.get(0),
+        )?;
         set_chapter_status(conn, chapter_id, cycle_status(&current))
     })
     .map(Json)
@@ -296,7 +326,10 @@ pub(crate) fn row_to_qcm(row: &rusqlite::Row) -> rusqlite::Result<QcmScoreRow> {
     })
 }
 
-pub async fn list_qcm_scores(State(state): State<AppState>, Path(chapter_id): Path<i64>) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
+pub async fn list_qcm_scores(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, chapter_id, tutor_session_id, date, score, total, source
@@ -309,9 +342,13 @@ pub async fn list_qcm_scores(State(state): State<AppState>, Path(chapter_id): Pa
     .map_err(AppError)
 }
 
-pub async fn list_all_qcm_scores(State(state): State<AppState>) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
+pub async fn list_all_qcm_scores(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<QcmScoreRow>>, AppError> {
     with_conn(&state.db, |conn| {
-        let mut stmt = conn.prepare("SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, chapter_id, tutor_session_id, date, score, total, source FROM qcm_scores",
+        )?;
         let rows = stmt.query_map([], row_to_qcm)?;
         rows.collect()
     })
@@ -327,7 +364,10 @@ pub struct AddQcmScoreRequest {
     pub total: i64,
 }
 
-pub async fn add_qcm_score(State(state): State<AppState>, Json(body): Json<AddQcmScoreRequest>) -> Result<Json<QcmScoreRow>, AppError> {
+pub async fn add_qcm_score(
+    State(state): State<AppState>,
+    Json(body): Json<AddQcmScoreRequest>,
+) -> Result<Json<QcmScoreRow>, AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO qcm_scores (chapter_id, date, score, total, source) VALUES (?1, ?2, ?3, ?4, 'manual')",
@@ -344,7 +384,10 @@ pub async fn add_qcm_score(State(state): State<AppState>, Json(body): Json<AddQc
     .map_err(AppError)
 }
 
-pub async fn delete_qcm_score(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn delete_qcm_score(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM qcm_scores WHERE id = ?1", params![id])?;
         Ok(())
@@ -364,7 +407,9 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionLogRow> {
     })
 }
 
-pub async fn list_timer_sessions(State(state): State<AppState>) -> Result<Json<Vec<SessionLogRow>>, AppError> {
+pub async fn list_timer_sessions(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SessionLogRow>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, ue_id, chapter_id, preset, duration_seconds, started_at, ended_at
@@ -387,7 +432,10 @@ pub struct AddTimerSessionRequest {
     pub ended_at: String,
 }
 
-pub async fn add_timer_session(State(state): State<AppState>, Json(body): Json<AddTimerSessionRequest>) -> Result<Json<SessionLogRow>, AppError> {
+pub async fn add_timer_session(
+    State(state): State<AppState>,
+    Json(body): Json<AddTimerSessionRequest>,
+) -> Result<Json<SessionLogRow>, AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO sessions (ue_id, chapter_id, preset, duration_seconds, started_at, ended_at)
@@ -405,7 +453,10 @@ pub async fn add_timer_session(State(state): State<AppState>, Json(body): Json<A
     .map_err(AppError)
 }
 
-pub async fn delete_timer_session(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn delete_timer_session(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
         Ok(())
@@ -413,13 +464,20 @@ pub async fn delete_timer_session(State(state): State<AppState>, Path(id): Path<
     .map_err(AppError)
 }
 
-pub async fn get_meta(State(state): State<AppState>, Path(key): Path<String>) -> Result<Json<Option<String>>, AppError> {
+pub async fn get_meta(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<Option<String>>, AppError> {
     with_conn(&state.db, |conn| {
-        conn.query_row("SELECT value FROM app_meta WHERE key = ?1", params![key], |r| r.get(0))
-            .or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(None),
-                other => Err(other),
-            })
+        conn.query_row(
+            "SELECT value FROM app_meta WHERE key = ?1",
+            params![key],
+            |r| r.get(0),
+        )
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
     })
     .map(Json)
     .map_err(AppError)
@@ -430,7 +488,11 @@ pub struct SetMetaRequest {
     pub value: String,
 }
 
-pub async fn set_meta(State(state): State<AppState>, Path(key): Path<String>, Json(body): Json<SetMetaRequest>) -> Result<(), AppError> {
+pub async fn set_meta(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Json(body): Json<SetMetaRequest>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute(
             "INSERT INTO app_meta (key, value) VALUES (?1, ?2)
@@ -462,14 +524,17 @@ fn row_to_error_note(row: &rusqlite::Row) -> rusqlite::Result<ErrorNote> {
         ladder_step: row.get(13)?,
         status: row.get(14)?,
         next_review_date: row.get(15)?,
+        updated_at: row.get(16)?,
     })
 }
 
 const ERROR_NOTE_COLUMNS: &str = "e.id, u.id, u.code, u.name, u.color, c.id, c.name,
     e.title, e.error_type, e.skill, e.my_reasoning, e.correction, e.source,
-    e.ladder_step, e.status, e.next_review_date";
+    e.ladder_step, e.status, e.next_review_date, e.updated_at";
 
-pub async fn list_error_notes(State(state): State<AppState>) -> Result<Json<Vec<ErrorNote>>, AppError> {
+pub async fn list_error_notes(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ErrorNote>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {ERROR_NOTE_COLUMNS} FROM error_notes e
@@ -516,7 +581,10 @@ pub(crate) fn create_card_for_error_note(conn: &Connection, note_id: i64) -> rus
     Ok(())
 }
 
-pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<CreateErrorNoteRequest>) -> Result<Json<ErrorNote>, AppError> {
+pub async fn create_error_note(
+    State(state): State<AppState>,
+    Json(body): Json<CreateErrorNoteRequest>,
+) -> Result<Json<ErrorNote>, AppError> {
     let title = body.title.trim().to_string();
     if title.is_empty() {
         return Err(AppError("Le point d'erreur doit être renseigné".into()));
@@ -562,7 +630,10 @@ pub async fn create_error_note(State(state): State<AppState>, Json(body): Json<C
 /// recall, guided application, independent mini-case, and timed extract. A
 /// completed timed extract marks the mistake mastered; it stays visible as a
 /// useful record but no longer appears in the due work.
-pub async fn advance_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Json<ErrorNote>, AppError> {
+pub async fn advance_error_note(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<ErrorNote>, AppError> {
     with_conn(&state.db, |conn| advance_error_note_inner(conn, id))
         .map(Json)
         .map_err(AppError)
@@ -602,7 +673,10 @@ fn advance_error_note_inner(conn: &Connection, id: i64) -> rusqlite::Result<Erro
     )
 }
 
-pub async fn delete_error_note(State(state): State<AppState>, Path(id): Path<i64>) -> Result<(), AppError> {
+pub async fn delete_error_note(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
     with_conn(&state.db, |conn| {
         conn.execute("DELETE FROM error_notes WHERE id = ?1", params![id])?;
         Ok(())
@@ -610,7 +684,9 @@ pub async fn delete_error_note(State(state): State<AppState>, Path(id): Path<i64
     .map_err(AppError)
 }
 
-pub async fn list_skill_profiles(State(state): State<AppState>) -> Result<Json<Vec<SkillProfileRow>>, AppError> {
+pub async fn list_skill_profiles(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SkillProfileRow>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT u.id, s.skill, a.score, a.note, a.recorded_at
@@ -650,7 +726,10 @@ pub struct RecordSkillRequest {
     pub note: Option<String>,
 }
 
-pub async fn record_skill_assessment(State(state): State<AppState>, Json(body): Json<RecordSkillRequest>) -> Result<(), AppError> {
+pub async fn record_skill_assessment(
+    State(state): State<AppState>,
+    Json(body): Json<RecordSkillRequest>,
+) -> Result<(), AppError> {
     if !(1..=4).contains(&body.score) {
         return Err(AppError("La compétence doit être notée de 1 à 4".into()));
     }
@@ -660,7 +739,13 @@ pub async fn record_skill_assessment(State(state): State<AppState>, Json(body): 
         conn.execute(
             "INSERT INTO skill_assessments (ue_id, chapter_id, skill, score, note, recorded_at)
              VALUES (?1, ?2, ?3, ?4, ?5, date('now','localtime'))",
-            params![body.ue_id, body.chapter_id, body.skill, body.score, body.note.filter(|s| !s.trim().is_empty())],
+            params![
+                body.ue_id,
+                body.chapter_id,
+                body.skill,
+                body.score,
+                body.note.filter(|s| !s.trim().is_empty())
+            ],
         )?;
         Ok(())
     })
@@ -678,7 +763,9 @@ fn row_to_exam_scenario(row: &rusqlite::Row) -> rusqlite::Result<ExamScenarioRow
     })
 }
 
-pub async fn list_exam_scenario(State(state): State<AppState>) -> Result<Json<Vec<ExamScenarioRow>>, AppError> {
+pub async fn list_exam_scenario(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ExamScenarioRow>>, AppError> {
     with_conn(&state.db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT u.id, u.code, u.name, u.color, es.current_mark, es.target_mark
@@ -698,7 +785,11 @@ pub struct SetExamScenarioRequest {
     pub target_mark: Option<f64>,
 }
 
-pub async fn set_exam_scenario(State(state): State<AppState>, Path(ue_id): Path<i64>, Json(body): Json<SetExamScenarioRequest>) -> Result<(), AppError> {
+pub async fn set_exam_scenario(
+    State(state): State<AppState>,
+    Path(ue_id): Path<i64>,
+    Json(body): Json<SetExamScenarioRequest>,
+) -> Result<(), AppError> {
     for mark in [body.current_mark, body.target_mark].into_iter().flatten() {
         if !(0.0..=20.0).contains(&mark) {
             return Err(AppError("Une note doit être comprise entre 0 et 20".into()));
@@ -727,7 +818,8 @@ mod tests {
     fn setup() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         migrate::run(&conn).unwrap();
-        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", []).unwrap();
+        conn.execute("INSERT INTO ues (code, name) VALUES ('UE1', 'Test UE')", [])
+            .unwrap();
         conn.execute(
             "INSERT INTO error_notes (ue_id, title, error_type, skill) VALUES (1, 'Mauvais régime de TVA', 'method', 'method')",
             [],
@@ -771,7 +863,11 @@ mod tests {
             advance_error_note_inner(&conn, 1).unwrap();
         }
         let before: String = conn
-            .query_row("SELECT next_review_date FROM error_notes WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT next_review_date FROM error_notes WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
 
         let note = advance_error_note_inner(&conn, 1).unwrap();

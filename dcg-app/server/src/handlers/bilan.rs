@@ -54,7 +54,10 @@ pub async fn weekly_bilan(State(state): State<AppState>) -> Result<Json<WeeklyBi
         .map_err(AppError)
 }
 
-fn weekly_bilan_inner(conn: &Connection, today: chrono::NaiveDate) -> rusqlite::Result<WeeklyBilan> {
+fn weekly_bilan_inner(
+    conn: &Connection,
+    today: chrono::NaiveDate,
+) -> rusqlite::Result<WeeklyBilan> {
     use chrono::Datelike;
     let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let next_monday = (monday + chrono::Duration::days(7)).to_string();
@@ -193,8 +196,16 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", true).unwrap();
         migrate::run(&conn).unwrap();
-        conn.execute("INSERT INTO ues (code, name, position) VALUES ('UE4', 'Droit fiscal', 1)", []).unwrap();
-        conn.execute("INSERT INTO ues (code, name, position) VALUES ('UE9', 'Compta', 2)", []).unwrap();
+        conn.execute(
+            "INSERT INTO ues (code, name, position) VALUES ('UE4', 'Droit fiscal', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ues (code, name, position) VALUES ('UE9', 'Compta', 2)",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -247,7 +258,11 @@ mod tests {
             params![today.to_string()],
         )
         .unwrap();
-        conn.execute("UPDATE error_notes SET status = 'mastered' WHERE title = 'fraîche'", []).unwrap();
+        conn.execute(
+            "UPDATE error_notes SET status = 'mastered' WHERE title = 'fraîche'",
+            [],
+        )
+        .unwrap();
 
         let bilan = weekly_bilan_inner(&conn, today).unwrap();
         assert_eq!(bilan.errors_created, 2);

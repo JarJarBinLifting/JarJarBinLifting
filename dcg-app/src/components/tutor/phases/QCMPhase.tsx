@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Qcm, QcmQuestion } from "../../../lib/types";
 import { confusionCueForQuestion, interleaveConfusionQuestions } from "../confusions";
 import { TutorSpin, Consigne } from "../shared";
+import { SourceExcerpt } from "../../SourceExcerpt";
 
 function feedbackForChoice(question: QcmQuestion, choice: number | undefined) {
   const cue = confusionCueForQuestion(question);
@@ -123,6 +124,7 @@ export function QCMPhase({
               <span style={{ whiteSpace: "pre-line" }}>{feedbackForChoice(q, sel)}</span>
             </div>
           )}
+          {answered && <SourceExcerpt reference={q.source_ref} />}
         </div>
         {answered && (
           <button className="tutor-bp" onClick={next} style={{ width: "100%", marginTop: 12 }}>
@@ -212,6 +214,7 @@ export function QCMPhase({
               })}
             </div>
             {done && <p style={{ margin: "7px 0 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: 7, lineHeight: 1.5, whiteSpace: "pre-line" }}>{feedbackForChoice(q, ans[qi])}</p>}
+            {done && <SourceExcerpt reference={q.source_ref} />}
           </div>
         ))}
       </div>

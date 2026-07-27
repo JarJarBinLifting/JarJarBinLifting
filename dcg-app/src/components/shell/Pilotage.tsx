@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import * as api from "../../lib/api";
 import { todayIso } from "../../lib/format";
+import { assessConceptReadiness } from "../../lib/conceptReadiness";
 import { useAppState } from "../../state/AppState";
-import type { AnnaleAttempt, ConceptProgress, ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
-import { AnnaleModal } from "./AnnaleModal";
+import type { ConceptProgress, ErrorNote, ErrorType, ExamSkill } from "../../lib/types";
+import { ProgressTrends } from "./ProgressTrends";
+import { CalibrationHistory } from "./CalibrationHistory";
 
 const SKILLS: { id: ExamSkill; label: string; description: string }[] = [
   { id: "recall", label: "Restitution", description: "Retrouver une règle, formule ou définition sans support." },
@@ -48,15 +50,8 @@ export function Pilotage() {
     source: "annale" as "manual" | "annale",
   });
   const [skillDrafts, setSkillDrafts] = useState<Record<string, number>>({});
-  const [annales, setAnnales] = useState<AnnaleAttempt[]>([]);
-  const [annaleOpen, setAnnaleOpen] = useState<{ resume: AnnaleAttempt | null } | null>(null);
   const [scenarioDrafts, setScenarioDrafts] = useState<Record<number, { current: string; target: string }>>({});
   const [concepts, setConcepts] = useState<ConceptProgress[]>([]);
-
-  useEffect(() => {
-    api.listAnnales().then(setAnnales);
-  }, []);
-
 
   useEffect(() => {
     let current = true;
@@ -67,6 +62,7 @@ export function Pilotage() {
     });
     return () => { current = false; };
   }, []);
+
   const activeErrors = errorNotes.filter((e) => e.status === "active");
   const dueErrors = activeErrors.filter((e) => e.next_review_date <= todayIso());
   const selectedUe = ues.find((u) => u.id === selectedUeId) ?? ues[0] ?? null;
@@ -141,30 +137,41 @@ export function Pilotage() {
   return (
     <div className="desktop-page pilotage-page" style={{ paddingBottom: 32 }}>
       <div className="work-header" style={{ marginBottom: 24 }}>
-        <div><div className="eyebrow">Lecture des risques</div><div className="work-title" style={{ fontSize: 34 }}>Pilotage examen</div>
+        <div><div className="eyebrow">Évolution et points faibles</div><div className="work-title" style={{ fontSize: 34 }}>Progrès</div>
         <p className="work-lead">
           Transforme chaque erreur en une prochaine action. Les notes ci-dessous sont un scénario sur tes UE suivies, pas une prédiction officielle.
         </p></div>
       </div>
 
+      <ProgressTrends />
+      <CalibrationHistory />
+
       <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Notions a securiser</div>
-        <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "4px 0 14px" }}>Chaque ligne est une notion, pas une moyenne de chapitre. Priorite aux notions dues et peu stabilisees.</p>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Notions à sécuriser</div>
+        <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5, margin: "4px 0 14px" }}>Chaque ligne est une notion, pas une moyenne de chapitre. Priorité aux notions dues et peu stabilisées.</p>
         {concepts.length ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {concepts.slice(0, 8).map((concept) => {
               const percentage = Math.round((concept.mastered_cards / concept.total_cards) * 100);
-              const name = concept.concept_label ?? (concept.concept_id ? `Notion ${concept.concept_id}` : "Notion complementaire");
+              const name = concept.concept_label ?? (concept.concept_id ? `Notion ${concept.concept_id}` : "Notion complémentaire");
+              const readiness = assessConceptReadiness(concept, errorNotes);
+              const readinessCopy = readiness.status === "reliable"
+                ? { label: "Fiable", color: "var(--accent-green)" }
+                : readiness.status === "consolidation"
+                  ? { label: "En consolidation", color: "var(--accent-yellow)" }
+                  : { label: "Fragile", color: "var(--accent-red)" };
               return <div key={`${concept.chapter_id}:${concept.concept_id ?? "general"}`} style={{ background: "var(--card2)", border: "1px solid var(--border)", borderLeft: `3px solid ${concept.ue_color ?? "var(--accent-blue)"}`, borderRadius: 2, padding: "10px 11px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 4 }}><div style={{ minWidth: 0 }}><span style={{ color: concept.ue_color ?? "var(--muted)", fontSize: 10, fontWeight: 800 }}>{concept.ue_code}</span><strong style={{ display: "block", fontSize: 12, color: "var(--text)", marginTop: 2 }}>{name} - {concept.chapter_name}</strong></div><b style={{ color: percentage >= 70 ? "var(--accent-green)" : percentage >= 40 ? "var(--accent-yellow)" : "var(--accent-red)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{percentage}%</b></div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 4 }}><div style={{ minWidth: 0 }}><span style={{ color: concept.ue_color ?? "var(--muted)", fontSize: 10, fontWeight: 800 }}>{concept.ue_code}</span><strong style={{ display: "block", fontSize: 12, color: "var(--text)", marginTop: 2 }}>{name} · {concept.chapter_name}</strong></div><div style={{ textAlign: "right" }}><b style={{ display: "block", color: readinessCopy.color, fontFamily: "var(--font-mono)", fontSize: 12 }}>{readinessCopy.label}</b><span style={{ color: "var(--muted)", fontSize: 10 }}>{percentage}% rappel</span></div></div>
                 <div style={{ height: 4, background: "var(--track)", borderRadius: 4, overflow: "hidden", margin: "7px 0" }}><div style={{ width: `${percentage}%`, height: "100%", background: concept.ue_color ?? "var(--accent-blue)" }} /></div>
-                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.45 }}>{concept.mastered_cards}/{concept.total_cards} cartes stabilisees - {concept.avg_sm2_repetitions.toFixed(1)} rappels SM-2 - {concept.due_cards ? `${concept.due_cards} a revoir aujourd'hui` : `prochain rappel ${concept.next_review_date ?? "a planifier"}`}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.45 }}>{readiness.unaidedRecallPercent}% rappel sans aide · stabilité SM‑2 {readiness.stability === "stable" ? "solide" : readiness.stability === "building" ? "en construction" : "à démarrer"} · {readiness.recentErrors ? `${readiness.recentErrors} erreur${readiness.recentErrors > 1 ? "s" : ""} récente${readiness.recentErrors > 1 ? "s" : ""}` : "pas d'erreur récente liée"}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>{readiness.lastExposureAt ? `Dernière exposition : ${readiness.lastExposureAt}` : "Pas encore de rappel enregistré"} · {concept.due_cards ? `${concept.due_cards} à revoir aujourd'hui` : `prochain rappel ${concept.next_review_date ?? "à planifier"}`}</div>
                 <div style={{ fontSize: 11, color: "var(--text)", marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{concept.sample_question}</div>
               </div>;
             })}
           </div>
-        ) : <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>Les notions apparaitront ici des que tu auras etudie une lecon avec des flashcards.</div>}
+        ) : <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>Les notions apparaîtront ici dès que tu auras étudié une leçon avec des flashcards.</div>}
       </section>
+
       <section className="pilotage-panel pilotage-priority surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderLeft: "3px solid var(--accent-red)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: dueErrors.length ? 12 : 0 }}>
           <div>
@@ -239,45 +246,6 @@ export function Pilotage() {
         </div>
       </section>
 
-      <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18, marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
-          <div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Annales chronométrées</div>
-            <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Colle un sujet réel, travaille contre la montre, sois corrigé au barème.</p>
-          </div>
-          <button onClick={() => setAnnaleOpen({ resume: null })} style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "9px 12px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-            + Nouvelle annale
-          </button>
-        </div>
-        {annales.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 13, padding: "6px 0" }}>Aucun entraînement pour l'instant — les annales des sessions précédentes sont le meilleur prédicteur de ta note.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {annales.slice(0, 6).map((a) => (
-              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--card2)", border: "1px solid var(--border)", borderLeft: `3px solid ${a.ue_color ?? "var(--border)"}`, borderRadius: 2, padding: "10px 11px" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: a.ue_color ?? "var(--muted)", marginBottom: 2 }}>
-                    {a.ue_code} · {a.duration_minutes} MIN · {a.status === "in_progress" ? "EN COURS" : a.status === "completed" ? "CORRIGÉE" : "ABANDONNÉE"}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
-                </div>
-                {a.status === "completed" && a.score !== null && (
-                  <b style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: a.total && a.score >= a.total / 2 ? "var(--accent-green)" : "var(--accent-red)", flexShrink: 0 }}>
-                    {a.score}/{a.total}
-                  </b>
-                )}
-                <button
-                  onClick={() => setAnnaleOpen({ resume: a })}
-                  style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "8px 10px", fontSize: 10, fontWeight: 800, flexShrink: 0 }}
-                >
-                  {a.status === "in_progress" ? "Reprendre →" : "Revoir →"}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
       <section className="pilotage-panel surface" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 3, padding: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10 }}>
           <div><div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Carnet d'erreurs</div><p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>{activeErrors.length} erreur{activeErrors.length > 1 ? "s" : ""} active{activeErrors.length > 1 ? "s" : ""} · {errorNotes.filter((e) => e.status === "mastered").length} maîtrisée{errorNotes.filter((e) => e.status === "mastered").length > 1 ? "s" : ""}</p></div>
@@ -304,16 +272,6 @@ export function Pilotage() {
         </div>
       )}
 
-      {annaleOpen && (
-        <AnnaleModal
-          resume={annaleOpen.resume}
-          onClose={() => {
-            setAnnaleOpen(null);
-            api.listAnnales().then(setAnnales);
-            refreshAll();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -325,6 +283,9 @@ function ErrorRow({ error, onAdvance, compact = false }: { error: ErrorNote; onA
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 10, fontWeight: 800, color: error.ue_color ?? "var(--muted)", marginBottom: 2 }}>{error.ue_code} · {LADDER[step].toUpperCase()}</div>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", lineHeight: 1.35 }}>{error.title}</div>
+        {!compact && error.my_reasoning && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, lineHeight: 1.45 }}><strong>Erreur commise :</strong> {error.my_reasoning}</div>}
+        {!compact && error.correction && <div style={{ fontSize: 11, color: "var(--text)", marginTop: 4, lineHeight: 1.45 }}><strong>Règle à réappliquer :</strong> {error.correction}</div>}
+        {!compact && error.source === "annale" && <div style={{ fontSize: 10, color: "var(--t-pri)", marginTop: 5, lineHeight: 1.45 }}>Plan programmé : carte de rappel libre + mini-QCM SM-2, puis {LADDER[Math.min(step + 1, LADDER.length - 1)].toLowerCase()}.</div>}
         {!compact && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>À revoir : {error.next_review_date} · {ERROR_TYPES.find((t) => t.id === error.error_type)?.label ?? error.error_type}</div>}
       </div>
       <button onClick={() => onAdvance(error)} style={{ background: "var(--accent-blue)", color: "#fff", border: "none", borderRadius: 2, padding: "8px 10px", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{step >= 3 ? "Maîtrisé" : "Valider →"}</button>

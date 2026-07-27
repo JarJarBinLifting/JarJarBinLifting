@@ -44,6 +44,14 @@ fn non_empty_strings(values: Option<&Vec<Value>>, expected: usize) -> bool {
     })
 }
 
+fn has_source_reference(item: &Value) -> bool {
+    item.get("source_ref")
+        .and_then(Value::as_object)
+        .and_then(|reference| reference.get("extrait"))
+        .and_then(Value::as_str)
+        .is_some_and(|excerpt| excerpt.trim().chars().count() >= 20)
+}
+
 fn invalid(message: impl Into<String>) -> Result<LessonAudit, String> {
     Err(message.into())
 }
@@ -58,6 +66,11 @@ pub(super) fn audit_lesson(
     expected_ue: &str,
 ) -> Result<LessonAudit, String> {
     let mut audit = LessonAudit::default();
+    let requires_source_references = data
+        .get("prompt_version")
+        .and_then(Value::as_i64)
+        .is_some_and(|version| version >= 6);
+    let mut missing_source_references = 0usize;
 
     if let Some(chapter) = text(data, "chapitre") {
         if !expected_chapter.trim().is_empty() && normalize(chapter) != normalize(expected_chapter)
@@ -162,6 +175,15 @@ pub(super) fn audit_lesson(
                 .warnings
                 .push(format!("Flashcard {} : verso trop court.", index + 1));
         }
+        if !has_source_reference(card) {
+            if requires_source_references {
+                return invalid(format!(
+                    "Flashcard {} : source_ref.extrait doit citer un extrait exact du support d'au moins 20 caracteres",
+                    index + 1
+                ));
+            }
+            missing_source_references += 1;
+        }
         if let Some(step) = card.get("etape").and_then(Value::as_i64) {
             if step > 0 && step <= steps.len() as i64 {
                 covered_steps.insert(step as usize);
@@ -235,6 +257,15 @@ pub(super) fn audit_lesson(
                 .warnings
                 .push(format!("QCM {} : justification trop courte.", index + 1));
         }
+        if !has_source_reference(question) {
+            if requires_source_references {
+                return invalid(format!(
+                    "QCM {} : source_ref.extrait doit citer un extrait exact du support d'au moins 20 caracteres",
+                    index + 1
+                ));
+            }
+            missing_source_references += 1;
+        }
         if let Some(feedbacks) = question.get("option_feedbacks") {
             if !non_empty_strings(feedbacks.as_array(), 4) {
                 return invalid(format!(
@@ -284,6 +315,15 @@ pub(super) fn audit_lesson(
                         index + 1
                     ));
                 }
+            }
+            if !has_source_reference(exercise) {
+                if requires_source_references {
+                    return invalid(format!(
+                        "Exercice {} : source_ref.extrait doit citer un extrait exact du support d'au moins 20 caracteres",
+                        index + 1
+                    ));
+                }
+                missing_source_references += 1;
             }
             if !matches!(
                 text(exercise, "format"),
@@ -361,6 +401,13 @@ pub(super) fn audit_lesson(
             .push("Aucun mini-exercice de simulation déclaré.".into());
     }
 
+    if missing_source_references > 0 {
+        audit.warnings.push(format!(
+            "{} element(s) ne sont pas relies a un extrait du support. Regenere avec le prompt v6.",
+            missing_source_references
+        ));
+    }
+
     Ok(audit)
 }
 
@@ -398,6 +445,14 @@ mod tests {
         let mut invalid = lesson();
         invalid["qcm"]["questions"][0]["options"] = json!(["A", "A", "C", "D"]);
         assert!(audit_lesson(&invalid, "La TVA", "UE4").is_err());
+    }
+
+    #[test]
+    fn blocks_prompt_v6_without_source_references() {
+        let mut invalid = lesson();
+        invalid["prompt_version"] = json!(6);
+        let error = audit_lesson(&invalid, "La TVA", "UE4").unwrap_err();
+        assert!(error.contains("source_ref.extrait"));
     }
 
     #[test]

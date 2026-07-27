@@ -41,63 +41,210 @@ async fn static_handler(uri: Uri) -> Response {
 fn api_router() -> Router<AppState> {
     Router::new()
         // settings
-        .route("/settings/local-config", get(handlers::settings::get_local_config))
+        .route(
+            "/settings/local-config",
+            get(handlers::settings::get_local_config),
+        )
         .route("/settings/db-path", post(handlers::settings::set_db_path))
-        .route("/settings/ensure-default-db", post(handlers::settings::ensure_default_db_route))
-        .route("/settings/api-key", post(handlers::settings::save_api_key).delete(handlers::settings::clear_api_key))
-        .route("/settings/api-key/status", get(handlers::settings::get_api_key_status))
+        .route(
+            "/settings/ensure-default-db",
+            post(handlers::settings::ensure_default_db_route),
+        )
+        .route(
+            "/settings/api-key",
+            post(handlers::settings::save_api_key).delete(handlers::settings::clear_api_key),
+        )
+        .route(
+            "/settings/api-key/status",
+            get(handlers::settings::get_api_key_status),
+        )
         .route("/settings/export", get(handlers::settings::export_database))
         // anthropic
         .route("/anthropic/call", post(handlers::anthropic::call_anthropic))
-        .route("/anthropic/test", post(handlers::anthropic::test_anthropic_connection))
+        .route(
+            "/anthropic/test",
+            post(handlers::anthropic::test_anthropic_connection),
+        )
         // planner
-        .route("/planner/seed", post(handlers::planner::seed_default_curriculum_route))
+        .route(
+            "/planner/seed",
+            post(handlers::planner::seed_default_curriculum_route),
+        )
+        .route(
+            "/planner/calibration-history",
+            get(handlers::calibration::calibration_history),
+        )
         .route("/planner/ues", get(handlers::planner::list_ues))
-        .route("/planner/ues/:ue_id/notes", patch(handlers::planner::update_ue_notes))
-        .route("/planner/ues/:ue_id/chapters", get(handlers::planner::list_chapters))
-        .route("/planner/chapters", get(handlers::planner::list_all_chapters))
-        .route("/planner/chapters/:chapter_id/cycle-status", post(handlers::planner::cycle_chapter_status))
-        .route("/planner/chapters/:chapter_id/qcm-scores", get(handlers::planner::list_qcm_scores))
-        .route("/planner/qcm-scores", get(handlers::planner::list_all_qcm_scores).post(handlers::planner::add_qcm_score))
-        .route("/planner/qcm-scores/:id", delete(handlers::planner::delete_qcm_score))
-        .route("/planner/sessions", get(handlers::planner::list_timer_sessions).post(handlers::planner::add_timer_session))
-        .route("/planner/sessions/:id", delete(handlers::planner::delete_timer_session))
+        .route(
+            "/planner/ues/:ue_id/notes",
+            patch(handlers::planner::update_ue_notes),
+        )
+        .route(
+            "/planner/ues/:ue_id/chapters",
+            get(handlers::planner::list_chapters),
+        )
+        .route(
+            "/planner/chapters",
+            get(handlers::planner::list_all_chapters),
+        )
+        .route(
+            "/planner/chapters/:chapter_id/cycle-status",
+            post(handlers::planner::cycle_chapter_status),
+        )
+        .route(
+            "/planner/chapters/:chapter_id/qcm-scores",
+            get(handlers::planner::list_qcm_scores),
+        )
+        .route(
+            "/planner/qcm-scores",
+            get(handlers::planner::list_all_qcm_scores).post(handlers::planner::add_qcm_score),
+        )
+        .route(
+            "/planner/qcm-scores/:id",
+            delete(handlers::planner::delete_qcm_score),
+        )
+        .route(
+            "/planner/sessions",
+            get(handlers::planner::list_timer_sessions).post(handlers::planner::add_timer_session),
+        )
+        .route(
+            "/planner/sessions/:id",
+            delete(handlers::planner::delete_timer_session),
+        )
         // exam pilotage
-        .route("/planner/errors", get(handlers::planner::list_error_notes).post(handlers::planner::create_error_note))
-        .route("/planner/errors/:id", delete(handlers::planner::delete_error_note))
-        .route("/planner/errors/:id/advance", post(handlers::planner::advance_error_note))
-        .route("/planner/skills", get(handlers::planner::list_skill_profiles).post(handlers::planner::record_skill_assessment))
-        .route("/planner/exam-scenario", get(handlers::planner::list_exam_scenario))
-        .route("/planner/exam-scenario/:ue_id", put(handlers::planner::set_exam_scenario))
-        .route("/planner/meta/:key", get(handlers::planner::get_meta).put(handlers::planner::set_meta))
+        .route(
+            "/planner/errors",
+            get(handlers::planner::list_error_notes).post(handlers::planner::create_error_note),
+        )
+        .route(
+            "/planner/errors/:id",
+            delete(handlers::planner::delete_error_note),
+        )
+        .route(
+            "/planner/errors/:id/advance",
+            post(handlers::planner::advance_error_note),
+        )
+        .route(
+            "/planner/skills",
+            get(handlers::planner::list_skill_profiles)
+                .post(handlers::planner::record_skill_assessment),
+        )
+        .route(
+            "/planner/exam-scenario",
+            get(handlers::planner::list_exam_scenario),
+        )
+        .route(
+            "/planner/exam-scenario/:ue_id",
+            put(handlers::planner::set_exam_scenario),
+        )
+        .route(
+            "/planner/meta/:key",
+            get(handlers::planner::get_meta).put(handlers::planner::set_meta),
+        )
         .route("/planner/weekly-bilan", get(handlers::bilan::weekly_bilan))
+        // imported lesson library
+        .route("/lessons", get(handlers::lessons::list_active))
+        .route(
+            "/lessons/chapters/:chapter_id",
+            get(handlers::lessons::list_chapter_versions).post(handlers::lessons::import_version),
+        )
+        .route(
+            "/lessons/:id/activate",
+            post(handlers::lessons::activate_version),
+        )
+        .route(
+            "/lessons/:id/flags",
+            get(handlers::lessons::list_flags).post(handlers::lessons::create_flag),
+        )
+        .route(
+            "/lessons/flags/:id/resolve",
+            post(handlers::lessons::resolve_flag),
+        )
         // tutor
-        .route("/tutor/sessions/start", post(handlers::tutor::start_or_resume_tutor_session))
-        .route("/tutor/chapters/:chapter_id/latest-completed", get(handlers::tutor::get_latest_completed_session))
-        .route("/tutor/chapters/:chapter_id/in-progress", get(handlers::tutor::get_in_progress_session))
-        .route("/tutor/sessions/:id", patch(handlers::tutor::save_tutor_session_progress))
-        .route("/tutor/sessions/:id/abandon", post(handlers::tutor::abandon_tutor_session))
-        .route("/tutor/chapters/:chapter_id/flashcards", get(handlers::tutor::list_flashcards).post(handlers::tutor::save_flashcards))
-        .route("/tutor/flashcards/due", get(handlers::tutor::list_due_flashcards))
-        .route("/tutor/concepts/progress", get(handlers::tutor::list_concept_progress))
+        .route(
+            "/tutor/sessions/start",
+            post(handlers::tutor::start_or_resume_tutor_session),
+        )
+        .route(
+            "/tutor/chapters/:chapter_id/latest-completed",
+            get(handlers::tutor::get_latest_completed_session),
+        )
+        .route(
+            "/tutor/chapters/:chapter_id/in-progress",
+            get(handlers::tutor::get_in_progress_session),
+        )
+        .route(
+            "/tutor/sessions/:id",
+            patch(handlers::tutor::save_tutor_session_progress),
+        )
+        .route(
+            "/tutor/sessions/:id/abandon",
+            post(handlers::tutor::abandon_tutor_session),
+        )
+        .route(
+            "/tutor/chapters/:chapter_id/flashcards",
+            get(handlers::tutor::list_flashcards).post(handlers::tutor::save_flashcards),
+        )
+        .route(
+            "/tutor/flashcards/due",
+            get(handlers::tutor::list_due_flashcards),
+        )
+        .route(
+            "/tutor/concepts/progress",
+            get(handlers::tutor::list_concept_progress),
+        )
         .route("/tutor/quiz/due", get(handlers::tutor::list_due_quiz))
-        .route("/tutor/quiz/:id/answer", post(handlers::tutor::answer_quiz_item))
+        .route(
+            "/tutor/quiz/:id/answer",
+            post(handlers::tutor::answer_quiz_item),
+        )
         // annale training
-        .route("/annales", get(handlers::annales::list_attempts).post(handlers::annales::start_attempt))
-        .route("/annales/:id", patch(handlers::annales::patch_attempt).delete(handlers::annales::delete_attempt))
-        .route("/annales/:id/complete", post(handlers::annales::complete_attempt))
-        .route("/annales/:id/abandon", post(handlers::annales::abandon_attempt))
+        .route(
+            "/annales",
+            get(handlers::annales::list_attempts).post(handlers::annales::start_attempt),
+        )
+        .route(
+            "/annales/:id",
+            patch(handlers::annales::patch_attempt).delete(handlers::annales::delete_attempt),
+        )
+        .route(
+            "/annales/:id/complete",
+            post(handlers::annales::complete_attempt),
+        )
+        .route(
+            "/annales/:id/abandon",
+            post(handlers::annales::abandon_attempt),
+        )
         // backups
-        .route("/settings/backups", get(handlers::backups::list_backups).post(handlers::backups::backup_now))
-        .route("/settings/backups/restore", post(handlers::backups::restore_backup))
+        .route(
+            "/settings/backups",
+            get(handlers::backups::list_backups).post(handlers::backups::backup_now),
+        )
+        .route(
+            "/settings/backups/restore",
+            post(handlers::backups::restore_backup),
+        )
         .route(
             "/settings/backups/restore-upload",
-            post(handlers::backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024)),
+            post(handlers::backups::restore_upload)
+                .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
-        .route("/tutor/flashcards/:id/progress", post(handlers::tutor::update_flashcard_progress))
-        .route("/tutor/sessions/:id/complete", post(handlers::tutor::complete_tutor_session))
-        .route("/tutor/due-chapters", get(handlers::tutor::list_due_chapters))
-        .route("/tutor/weak-chapters", get(handlers::tutor::list_weak_chapters))
+        .route(
+            "/tutor/flashcards/:id/progress",
+            post(handlers::tutor::update_flashcard_progress),
+        )
+        .route(
+            "/tutor/sessions/:id/complete",
+            post(handlers::tutor::complete_tutor_session),
+        )
+        .route(
+            "/tutor/due-chapters",
+            get(handlers::tutor::list_due_chapters),
+        )
+        .route(
+            "/tutor/weak-chapters",
+            get(handlers::tutor::list_weak_chapters),
+        )
         .route("/tutor/usage", get(handlers::tutor::get_usage_summary))
 }
 
@@ -113,7 +260,10 @@ async fn main() {
         .timeout(std::time::Duration::from_secs(180))
         .build()
         .expect("failed to build HTTP client");
-    let state = AppState { db: Arc::new(DbState::default()), http };
+    let state = AppState {
+        db: Arc::new(DbState::default()),
+        http,
+    };
 
     let opened = match handlers::settings::reopen_configured_db(&state) {
         Ok(true) => true,
@@ -147,13 +297,21 @@ async fn main() {
     // anything Anthropic itself would accept (its request cap is 32 MB);
     // the restore-upload route keeps its own larger per-route limit.
     let app = Router::new()
-        .nest("/api", api_router().layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
+        .nest(
+            "/api",
+            api_router().layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)),
+        )
         .fallback(static_handler)
         .with_state(state);
 
-    let port: u16 = std::env::var("DCG_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(4287);
+    let port: u16 = std::env::var("DCG_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4287);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind local port");
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("failed to bind local port");
 
     let url = format!("http://127.0.0.1:{port}");
     tracing::info!("DCG Étude listening on {url}");

@@ -14,6 +14,8 @@ dist-ssr
 
 # Rust server build output
 server/target
+# Alternate build dirs created when the running exe locks server/target
+server/target-*
 
 # Editor directories and files
 .vscode/*
@@ -25,3 +27,6 @@ server/target
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code local settings (machine-specific paths)
+.claude/settings.local.json

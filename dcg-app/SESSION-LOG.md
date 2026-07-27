@@ -395,3 +395,75 @@ Les tâches prioritaires sont littéralement renseignées comme `[tâche 1]`, `[
 
 - « Comparable » signifie ici deux annales corrigées et normalisées en pourcentage dans la même UE. Les durées ou années de sujet ne sont pas assimilées à une mesure d’examen officielle ; la recommandation reste donc un prochain format d’entraînement, pas une prédiction.
 - La baisse nette est fixée à 10 points ; sous ce seuil, la durée dépend uniquement du dernier pourcentage.
+---
+
+# Rapport final — chantier 6 : paires de confusion dans les flashcards SM-2 du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- Une leçon JSON importée peut déjà déclarer une paire de confusion dans ses QCM. Chaque paire produit désormais une flashcard de comparaison active : l’étudiant formule la frontière entre les deux notions avant de retourner la carte.
+- La réponse ne reprend que la distinction fournie par le JSON importé : aucun exemple ni règle DCG n’est inventé.
+- Une même paire n’est créée qu’une fois, même si elle apparaît dans plusieurs QCM ou dans l’ordre inverse. Les cartes déjà enregistrées restent inchangées ; seules les comparaisons absentes sont ajoutées lors d’un nouvel import.
+- Les cartes rejoignent le parcours existant de répétition espacée SM-2, et le QCM reste entrelacé. Cela couvre le rappel actif, l’entrelacement et la révision planifiée des notions proches.
+- Validation : build client, lint (six avertissements Fast Refresh préexistants) et démarrage Vite réel sur `127.0.0.1:4177` (`HTTP 200`).
+- Aucune dépendance, migration ou donnée existante n’a été supprimée ou modifiée de manière destructive.
+
+## Décisions à valider
+
+- Une paire est dédupliquée à partir des deux intitulés normalisés ; deux distinctions différentes pour exactement les mêmes notions conservent donc la première carte fournie par la leçon. C’est le choix le plus réversible pour éviter de multiplier les cartes très proches.
+
+## Surprises rencontrées
+
+- Le branchement du flux de leçon importée est dans `TutorModal.tsx`, déjà fortement modifié dans l’espace de travail. Le branchement est actif, compilé et testé, mais il ne sera pas isolé dans un commit séparé afin de ne pas absorber ces changements préexistants.
+---
+
+# Rapport final — plan du jour adaptatif du 25 juillet 2026
+
+## Ce qui est fait et testé
+
+- Le tableau de bord demande maintenant le temps réellement disponible : 15, 30, 45 ou 60 minutes. Ce choix est conservé localement pour les prochaines journées.
+- Le plan utilise ce budget dans un ordre explicite : une erreur due, un lot de rappel SM-2, un mini-quiz sur les erreurs passées, puis seulement le temps restant pour une révision de chapitre, une simulation d'examen ou un nouveau chapitre.
+- Les UE choisies comme prioritaires passent en premier dans les lots de cartes et QCM, et pour le prochain nouveau chapitre. La phase d'examen choisit aussi entre couverture du programme et simulation chronométrée.
+- Les cartes et QCM ouverts depuis le plan sont réellement limités au lot calculé. Les éléments non inclus ne sont ni supprimés ni décalés : ils restent dus et réapparaissent automatiquement. Le lot traité est mémorisé pour la session, ce qui évite de le représenter immédiatement après fermeture.
+- Test ajouté sans dépendance : scénarios de budget court, UE prioritaire et phase d'entraînement (`npm run test:daily-plan`).
+- Validation : test du plan quotidien, lint client, build client, `cargo fmt --check`, **66 tests Rust** (0 échec) et démarrage Vite réel (`HTTP 200`).
+- Aucune dépendance, migration ou modification destructive de données.
+
+## Décisions à valider
+
+- Les estimations sont volontairement transparentes : 4 cartes/minute, 1 QCM/minute et 5 minutes par erreur d'annale. Elles rendent le plan finissable ; elles pourront être ajustées après des données d'usage réelles.
+- Même sur un créneau de 15 minutes, le plan alterne au moins une erreur, des cartes et un QCM lorsqu'ils sont dus. Cette priorité protège le rappel actif et l'entrelacement plutôt qu'un seul backlog.
+- L'avancement du lot est conservé jusqu'à fermeture de l'onglet (session storage), tandis que le budget choisi reste conservé localement. Cela évite de prétendre qu'un lot non terminé est définitivement fait.
+
+## Surprises rencontrées
+
+- L'exécutable standard était ouvert et verrouillait son remplacement. Une version à jour a été compilée sans interrompre l'application existante dans `server/target-adaptive-plan/release/dcg-server.exe`.
+- Le tableau de bord était déjà modifié dans l'espace de travail. Le branchement est actif, compilé et testé, mais il ne sera pas isolé dans un commit séparé afin de ne pas absorber ces changements préexistants.
+---
+
+# Rapport final - tracabilite des extraits source du 27 juillet 2026
+
+## Ce qui est fait et teste
+
+- Le prompt d'import est passe a la version 6. Chaque flashcard, QCM et mini-exercice d'une nouvelle lecon doit declarer `source_ref`, avec section optionnelle et extrait exact d'au moins 20 caracteres.
+- Les nouveaux imports v6 sans extrait sont bloques cote client et cote serveur. Les anciennes lecons restent utilisables : elles affichent un avertissement de couverture source, sans perdre leurs donnees ni leur planification SM-2.
+- La migration additive `0014_source_references.sql` ajoute des colonnes facultatives a `flashcards` et `quiz_items`. Aucune carte, aucun QCM et aucun historique existant n'est modifie ou supprime.
+- Les extraits sont conserves pour les cartes, les cartes de confusion et les QCM de reprise. Ils apparaissent uniquement apres le rappel actif ou la correction : flashcards, QCM de lecon, revision eclair, quiz eclair et simulation ecrite.
+- Tests : `cargo test` (68 passes), `npm run build`, `node --experimental-strip-types tests/sourceReference.test.ts`, `cargo fmt --check` et build serveur release. Le lint client passe avec les six avertissements Fast Refresh preexistants.
+- Executable de production construit sans interrompre la version en cours : `server/target-source-anchors/release/dcg-server.exe`.
+
+## Ce qui est commence
+
+- Rien sur ce chantier.
+
+## Decisions a valider
+
+- Un extrait valide est defini comme une citation declaree de 20 caracteres minimum. L'application ne pretend pas verifier automatiquement que le texte a ete copie mot a mot depuis le PDF ; elle le rend visible apres reponse pour que l'etudiant puisse le controler.
+
+## Ce que j'aurais fait ensuite
+
+- Ajouter une verification optionnelle de correspondance litterale entre les extraits declares et le texte brut du chapitre lorsque ce texte est disponible localement.
+
+## Surprises rencontrees
+
+- Le workspace contenait deja de nombreux fichiers modifies et non suivis. Les changements de ce chantier sont fonctionnels et verifies, mais aucun commit isole n'a ete cree afin de ne pas englober des modifications preexistantes dans les memes fichiers.
